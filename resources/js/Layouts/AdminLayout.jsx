@@ -3,7 +3,7 @@ import { useState } from 'react';
 import {
     LayoutDashboard, Store, Tag, Utensils, Map, LayoutGrid,
     ShoppingCart, Settings, LogOut, ChevronLeft, Users, UserCog, ShieldCheck,
-    BarChart2, ReceiptText,
+    BarChart2, ReceiptText, Percent,
 } from 'lucide-react';
 import { Avatar, AvatarFallback } from '@/Components/ui/avatar';
 import { Separator } from '@/Components/ui/separator';
@@ -22,6 +22,7 @@ const NAV_ITEMS = [
     { name: 'الطاولات',          icon: LayoutGrid,      route: 'admin.tables.index',    active: 'admin.tables.*',       permission: 'admin.tables' },
     { name: 'المستخدمون',        icon: UserCog,         route: 'admin.users.index',     active: 'admin.users.*',        permission: 'admin.users' },
     { name: 'الأدوار والصلاحيات', icon: ShieldCheck,    route: 'admin.roles.index',     active: 'admin.roles.*',        permission: 'admin.roles' },
+    { name: 'الضرائب',           icon: Percent,         route: 'admin.taxes.index',     active: 'admin.taxes.*',        permission: 'admin.taxes' },
     { name: 'الإعدادات',         icon: Settings,        route: 'admin.settings.index',  active: 'admin.settings.*',     permission: 'admin.settings' },
 ];
 

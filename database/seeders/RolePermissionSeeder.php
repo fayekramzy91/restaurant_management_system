@@ -49,6 +49,7 @@ class RolePermissionSeeder extends Seeder
             ['key' => 'admin.areas',      'display_name' => 'إدارة القاعات'],
             ['key' => 'admin.tables',     'display_name' => 'إدارة الطاولات'],
             ['key' => 'admin.categories', 'display_name' => 'إدارة التصنيفات'],
+            ['key' => 'admin.taxes',      'display_name' => 'إدارة الضرائب'],
             ['key' => 'admin.settings',   'display_name' => 'إدارة الإعدادات'],
             ['key' => 'admin.users',      'display_name' => 'إدارة المستخدمين'],
             ['key' => 'admin.roles',      'display_name' => 'إدارة الأدوار والصلاحيات'],
