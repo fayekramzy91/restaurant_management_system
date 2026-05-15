@@ -1,15 +1,17 @@
 <?php
 
 use App\Http\Controllers\Admin\AreaController;
+use App\Http\Controllers\Customer\CustomerMenuController;
+use App\Http\Controllers\Customer\CustomerOrderController;
 use App\Http\Controllers\Admin\BranchController;
 use App\Http\Controllers\Admin\CategoryController;
 use App\Http\Controllers\Admin\CustomerController as AdminCustomerController;
 use App\Http\Controllers\Admin\DashboardController;
 use App\Http\Controllers\Admin\MenuItemController;
-use App\Http\Controllers\Admin\OrderController as AdminOrderController;
 use App\Http\Controllers\Admin\InvoiceController;
-use App\Http\Controllers\Admin\PaymentMethodController;
+use App\Http\Controllers\Admin\OrderController as AdminOrderController;
 use App\Http\Controllers\Admin\ReportController;
+use App\Http\Controllers\Admin\PaymentMethodController;
 use App\Http\Controllers\Admin\RoleController;
 use App\Http\Controllers\Admin\SettingController;
 use App\Http\Controllers\Admin\TableController;
@@ -24,6 +26,15 @@ use App\Models\Table;
 use Illuminate\Foundation\Application;
 use Illuminate\Support\Facades\Route;
 use Inertia\Inertia;
+
+// ── Customer self-ordering (public, QR-based) ─────────────────────────────────
+Route::prefix('menu')->name('customer.')->group(function () {
+    Route::get('/{token}', [CustomerMenuController::class, 'show'])->name('menu');
+    Route::post('/{token}/order', [CustomerOrderController::class, 'placeOrder'])->name('order.place');
+    Route::get('/{token}/order/{orderId}', [CustomerOrderController::class, 'status'])->name('order.status');
+    Route::post('/{token}/order/{orderId}/items', [CustomerOrderController::class, 'addItem'])->name('order.add-item');
+    Route::delete('/{token}/order/{orderId}', [CustomerOrderController::class, 'cancel'])->name('order.cancel');
+});
 
 // ── Public ────────────────────────────────────────────────────────────────────
 Route::get('/', function () {
@@ -69,6 +80,10 @@ Route::middleware('auth')->prefix('admin')->name('admin.')->group(function () {
     Route::resource('tables', TableController::class)
         ->middleware('permission:admin.tables');
 
+    Route::post('tables/{table}/generate-qr', [TableController::class, 'generateQr'])
+        ->middleware('permission:admin.tables')
+        ->name('tables.generate-qr');
+
     Route::get('reports', [ReportController::class, 'dashboard'])
         ->middleware('permission:reports.view')
         ->name('reports.dashboard');
@@ -93,11 +108,6 @@ Route::middleware('auth')->prefix('admin')->name('admin.')->group(function () {
         ->middleware('permission:customers.view')
         ->name('customers.index');
 
-    Route::middleware('permission:admin.roles')->group(function () {
-        Route::resource('roles', RoleController::class)->only(['index', 'store', 'update', 'destroy']);
-        Route::post('roles/{role}/permissions', [RoleController::class, 'syncPermissions'])->name('roles.permissions');
-    });
-
     Route::middleware('permission:admin.settings')->group(function () {
         Route::get('settings', [SettingController::class, 'index'])->name('settings.index');
         Route::post('settings', [SettingController::class, 'update'])->name('settings.update');
@@ -116,6 +126,10 @@ Route::middleware('auth')->prefix('admin')->name('admin.')->group(function () {
         Route::post('users/{user}/reset-password', [UserController::class, 'resetPassword'])->name('users.reset-password');
     });
 
+    Route::middleware('permission:admin.roles')->group(function () {
+        Route::resource('roles', RoleController::class)->only(['index', 'store', 'update', 'destroy']);
+        Route::post('roles/{role}/permissions', [RoleController::class, 'syncPermissions'])->name('roles.permissions');
+    });
 });
 
 // ── Kitchen ───────────────────────────────────────────────────────────────────
@@ -184,15 +198,12 @@ Route::middleware('auth')->group(function () {
         Route::put('/orders/{order}/items/{item}', [OrderController::class, 'updateItem'])->name('orders.update-item');
         Route::put('/orders/{order}/items/{item}/addons', [OrderController::class, 'updateItemAddons'])->name('orders.update-item-addons');
         Route::delete('/orders/{order}/items/{item}', [OrderController::class, 'removeItem'])->name('orders.remove-item');
+        Route::post('/orders/{order}/free-table', [OrderController::class, 'freeTable'])->name('orders.free-table');
     });
 
     Route::post('/orders/{order}/complete', [OrderController::class, 'complete'])
-        ->middleware('permission:payments.process')
-        ->name('orders.complete');
-
-    Route::post('/orders/{order}/free-table', [OrderController::class, 'freeTable'])
         ->middleware('permission:orders.update')
-        ->name('orders.free-table');
+        ->name('orders.complete');
 });
 
 // ── Profile ───────────────────────────────────────────────────────────────────

@@ -55,9 +55,7 @@ class InvoiceController extends Controller
     public function show(Invoice $invoice)
     {
         $invoice->load([
-            'taxes',
             'items.addons',
-            'items.taxes',
             'order.items.menuItem',
             'order.items.addons.menuItem',
             'order.table.area',

@@ -1,6 +1,6 @@
 import AdminLayout from '@/Layouts/AdminLayout';
 import { Head, useForm, usePage, router } from '@inertiajs/react';
-import { Plus, Edit, Trash2, Utensils, CheckCircle2, CircleOff, Sparkles, Clock, ImageIcon, X, RotateCcw, Archive, Percent } from 'lucide-react';
+import { Plus, Edit, Trash2, Utensils, CheckCircle2, CircleOff, Sparkles, Clock, ImageIcon, X, RotateCcw, Archive } from 'lucide-react';
 import { useState, useRef } from 'react';
 import { Button } from '@/Components/ui/button';
 import { Input } from '@/Components/ui/input';
@@ -21,7 +21,7 @@ function Pill({ icon: Icon, label, cls }) {
 
 const selectCls = 'flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring';
 
-export default function Index({ menuItems, archived, categories, taxRates }) {
+export default function Index({ menuItems, archived, categories }) {
     const { settings } = usePage().props;
     const currency = settings?.currency || 'SAR';
 
@@ -36,8 +36,6 @@ export default function Index({ menuItems, archived, categories, taxRates }) {
         name: '', category_id: categories[0]?.id || '', price: '',
         description: '', status: 'available', is_addon: false,
         preparing_duration: '', image: null,
-        is_tax_exempt: false,
-        tax_rate_ids: [],
     });
 
     const openCreate = () => {
@@ -60,8 +58,6 @@ export default function Index({ menuItems, archived, categories, taxRates }) {
             is_addon: Boolean(item.is_addon),
             preparing_duration: item.preparing_duration || '',
             image: null,
-            is_tax_exempt: Boolean(item.is_tax_exempt),
-            tax_rate_ids: item.tax_rates?.map(t => t.id) ?? [],
         });
         setOpen(true);
     };
@@ -414,83 +410,6 @@ export default function Index({ menuItems, archived, categories, taxRates }) {
                                     <Label htmlFor="is_addon" className="cursor-pointer text-violet-800">هذا الصنف إضافة (Add-on)</Label>
                                     <p className="text-xs text-muted-foreground mt-0.5">لن يظهر كصنف رئيسي، بل سيُطلب كإضافة للأصناف الأخرى.</p>
                                 </div>
-                            </div>
-
-                            {/* ── Tax section ────────────────────────────── */}
-                            <div className="border border-slate-200 rounded-xl overflow-hidden">
-                                {/* Section header */}
-                                <div className="px-4 py-3 bg-slate-50 flex items-center gap-2">
-                                    <Percent size={13} className="text-slate-400 shrink-0" />
-                                    <span className="text-sm font-semibold text-slate-700">الضرائب المطبقة</span>
-                                </div>
-
-                                {/* Exempt toggle row */}
-                                <div className="px-4 py-3 flex items-center justify-between gap-3 border-t border-slate-100">
-                                    <div className="flex items-center gap-2 min-w-0">
-                                        <span className="text-sm font-semibold text-slate-700">إعفاء كامل من الضرائب</span>
-                                        {data.is_tax_exempt && (
-                                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-semibold bg-emerald-50 text-emerald-600 ring-1 ring-emerald-200/80 shrink-0">
-                                                معفى
-                                            </span>
-                                        )}
-                                    </div>
-                                    <button
-                                        type="button"
-                                        role="switch"
-                                        aria-checked={data.is_tax_exempt}
-                                        onClick={() => setData('is_tax_exempt', !data.is_tax_exempt)}
-                                        className={cn(
-                                            'relative w-9 h-5 rounded-full transition-colors shrink-0',
-                                            data.is_tax_exempt ? 'bg-primary' : 'bg-slate-200'
-                                        )}
-                                    >
-                                        <span className={cn(
-                                            'absolute top-0.5 w-4 h-4 bg-white rounded-full shadow-sm transition-transform',
-                                            data.is_tax_exempt ? 'translate-x-[-1.25rem]' : 'translate-x-[-0.25rem]'
-                                        )} />
-                                    </button>
-                                </div>
-
-                                {/* Tax rate checkboxes */}
-                                {(taxRates ?? []).length > 0 ? (
-                                    <div className={cn(
-                                        'px-4 pb-4 pt-2 space-y-2.5 border-t border-slate-100 transition-opacity',
-                                        data.is_tax_exempt && 'opacity-40 pointer-events-none select-none'
-                                    )}>
-                                        {(taxRates ?? []).map(tax => (
-                                            <label key={tax.id} className="flex items-center gap-2.5 cursor-pointer group">
-                                                <input
-                                                    type="checkbox"
-                                                    checked={data.tax_rate_ids.includes(tax.id)}
-                                                    onChange={e => {
-                                                        const ids = e.target.checked
-                                                            ? [...data.tax_rate_ids, tax.id]
-                                                            : data.tax_rate_ids.filter(id => id !== tax.id);
-                                                        setData('tax_rate_ids', ids);
-                                                    }}
-                                                    disabled={data.is_tax_exempt}
-                                                    className="rounded border-input text-primary shrink-0"
-                                                />
-                                                <span className="text-sm text-slate-700 flex-1 group-hover:text-slate-900 transition-colors">
-                                                    {tax.name}
-                                                </span>
-                                                <span className="text-xs font-semibold font-sans text-slate-400 shrink-0">
-                                                    {parseFloat(tax.rate).toFixed(2)}%
-                                                </span>
-                                                {tax.is_compound && (
-                                                    <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-yellow-50 text-yellow-600 ring-1 ring-yellow-200/80 shrink-0">
-                                                        مركبة
-                                                    </span>
-                                                )}
-                                            </label>
-                                        ))}
-                                    </div>
-                                ) : (
-                                    <p className="px-4 py-3 text-xs text-slate-400 border-t border-slate-100">
-                                        لا توجد معدلات ضريبة مفعّلة — أضف معدلات من صفحة{' '}
-                                        <a href="/admin/taxes" className="text-primary hover:underline">الضرائب</a>.
-                                    </p>
-                                )}
                             </div>
                         </div>
                         <DialogFooter className="px-6 pb-6 border-t pt-4">

@@ -1,23 +1,15 @@
 import AdminLayout from '@/Layouts/AdminLayout';
 import { Head, useForm, router } from '@inertiajs/react';
-import { useState } from 'react';
-import { Store, Phone, MapPin, Clock, DollarSign, CreditCard, Plus, Trash2, Edit2, X, Check, Shield, Percent, AlertTriangle } from 'lucide-react';
+import { useState, useEffect, useRef } from 'react';
+import { Store, Phone, MapPin, Clock, DollarSign, CreditCard, Plus, Trash2, Edit2, X, Check, Shield, CheckCircle2, AlertCircle, QrCode } from 'lucide-react';
 import { Button } from '@/Components/ui/button';
 import { Input } from '@/Components/ui/input';
 import { Label } from '@/Components/ui/label';
 import { Card, CardContent } from '@/Components/ui/card';
 
 const CURRENCIES = [
-    { code: 'SAR', label: 'ريال سعودي (ر.س)' },
+    { code: 'ILS', label: 'شيكل إسرائيلي (₪)' },
     { code: 'USD', label: 'دولار أمريكي ($)' },
-    { code: 'EUR', label: 'يورو (€)' },
-    { code: 'GBP', label: 'جنيه إسترليني (£)' },
-    { code: 'AED', label: 'درهم إماراتي (د.إ)' },
-    { code: 'KWD', label: 'دينار كويتي (د.ك)' },
-    { code: 'QAR', label: 'ريال قطري (ر.ق)' },
-    { code: 'BHD', label: 'دينار بحريني (د.ب)' },
-    { code: 'OMR', label: 'ريال عُماني (ر.ع)' },
-    { code: 'EGP', label: 'جنيه مصري (ج.م)' },
 ];
 
 function Field({ label, error, children, className = '' }) {
@@ -26,31 +18,6 @@ function Field({ label, error, children, className = '' }) {
             <Label className="text-xs font-semibold text-slate-500 uppercase tracking-wide">{label}</Label>
             {children}
             {error && <p className="text-xs text-destructive mt-1">{error}</p>}
-        </div>
-    );
-}
-
-/** Reusable toggle row for the tax settings card */
-function TaxToggleRow({ checked, onChange, label, helper }) {
-    return (
-        <div className="flex items-start justify-between gap-4">
-            <div className="min-w-0">
-                <p className="text-sm font-semibold text-slate-700">{label}</p>
-                {helper && (
-                    typeof helper === 'string'
-                        ? <p className="text-xs text-slate-400 mt-0.5">{helper}</p>
-                        : <p className="text-xs mt-0.5">{helper}</p>
-                )}
-            </div>
-            <button
-                type="button"
-                role="switch"
-                aria-checked={checked}
-                onClick={() => onChange(!checked)}
-                className={`relative w-9 h-5 rounded-full transition-colors shrink-0 focus-visible:ring-2 focus-visible:ring-ring ${checked ? 'bg-primary' : 'bg-slate-200'}`}
-            >
-                <span className={`absolute top-0.5 w-4 h-4 bg-white rounded-full shadow-sm transition-transform ${checked ? 'translate-x-[-1.25rem]' : 'translate-x-[-0.25rem]'}`} />
-            </button>
         </div>
     );
 }
@@ -72,29 +39,31 @@ function SectionCard({ icon: Icon, iconCls, title, children }) {
 }
 
 export default function Index({ settings, payment_methods }) {
-    // Helper: setting values come back as strings ("1"/"0") — convert to boolean
-    const taxBool = (key) => {
-        const v = settings?.['tax.' + key];
-        return v === '1' || v === 'true' || v === true || v === 1;
-    };
-
     const { data, setData, post, processing, errors } = useForm({
-        restaurant_name: settings?.restaurant_name || '',
-        currency:        settings?.currency || 'SAR',
-        working_hours:   settings?.working_hours || '',
-        phone:           settings?.phone || '',
-        address:         settings?.address || '',
-        tax: {
-            prices_include_tax:     taxBool('prices_include_tax'),
-            compound_taxes_enabled: taxBool('compound_taxes_enabled'),
-            exempt_takeaway:        taxBool('exempt_takeaway'),
-            exempt_delivery:        taxBool('exempt_delivery'),
-            rounding_mode:          settings?.['tax.rounding_mode'] || 'per_line',
-            display_breakdown:      taxBool('display_breakdown'),
-        },
+        restaurant_name:               settings?.restaurant_name || '',
+        currency:                      settings?.currency || 'ILS',
+        working_hours:                 settings?.working_hours || '',
+        phone:                         settings?.phone || '',
+        address:                       settings?.address || '',
+        customer_allow_add_after_submit: settings?.customer_allow_add_after_submit || '0',
     });
 
-    const submit = (e) => { e.preventDefault(); post(route('admin.settings.update')); };
+    const [toast, setToast] = useState(null);
+    const toastTimer = useRef(null);
+
+    const showToast = (type, message) => {
+        clearTimeout(toastTimer.current);
+        setToast({ type, message });
+        toastTimer.current = setTimeout(() => setToast(null), 4000);
+    };
+
+    const submit = (e) => {
+        e.preventDefault();
+        post(route('admin.settings.update'), {
+            onSuccess: () => showToast('success', 'تم حفظ الإعدادات بنجاح'),
+            onError:   () => showToast('error',   'حدث خطأ أثناء الحفظ، تحقق من البيانات'),
+        });
+    };
 
     const [newMethodName, setNewMethodName] = useState('');
     const [editingMethod, setEditingMethod] = useState(null);
@@ -111,7 +80,7 @@ export default function Index({ settings, payment_methods }) {
         <AdminLayout title="الإعدادات العامة">
             <Head title="الإعدادات" />
 
-            <form onSubmit={submit} className="space-y-4 max-w-3xl">
+            <form onSubmit={submit} className="space-y-4 max-w-3xl mx-auto">
                 {/* Restaurant Info */}
                 <SectionCard icon={Store} iconCls="bg-blue-50 text-blue-500" title="معلومات المطعم">
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
@@ -148,76 +117,24 @@ export default function Index({ settings, payment_methods }) {
                     </Field>
                 </SectionCard>
 
-                {/* ── Tax Settings ───────────────────────────────────── */}
-                <SectionCard icon={Percent} iconCls="bg-red-50 text-red-500" title="إعدادات الضرائب">
-                    <div className="space-y-5">
-
-                        {/* Prices include tax */}
-                        <TaxToggleRow
-                            checked={data.tax.prices_include_tax}
-                            onChange={v => setData('tax', { ...data.tax, prices_include_tax: v })}
-                            label="الأسعار شاملة الضريبة"
-                            helper={
-                                <span className="flex items-center gap-1 text-amber-600">
-                                    <AlertTriangle size={11} className="shrink-0" />
-                                    تغيير هذا الإعداد يؤثر على حساب الفواتير الجديدة فقط
-                                </span>
-                            }
-                        />
-
-                        {/* Compound taxes */}
-                        <TaxToggleRow
-                            checked={data.tax.compound_taxes_enabled}
-                            onChange={v => setData('tax', { ...data.tax, compound_taxes_enabled: v })}
-                            label="تفعيل الضرائب المركبة"
-                            helper="الضريبة المركبة تُحسب فوق الضرائب الأخرى"
-                        />
-
-                        {/* Exempt takeaway */}
-                        <TaxToggleRow
-                            checked={data.tax.exempt_takeaway}
-                            onChange={v => setData('tax', { ...data.tax, exempt_takeaway: v })}
-                            label="إعفاء طلبات تيك أواي من الضرائب"
-                        />
-
-                        {/* Exempt delivery */}
-                        <TaxToggleRow
-                            checked={data.tax.exempt_delivery}
-                            onChange={v => setData('tax', { ...data.tax, exempt_delivery: v })}
-                            label="إعفاء طلبات التوصيل من الضرائب"
-                        />
-
-                        {/* Rounding mode */}
-                        <div className="space-y-2">
-                            <Label className="text-xs font-semibold text-slate-500 uppercase tracking-wide">
-                                أسلوب التقريب
-                            </Label>
-                            <div className="flex items-center gap-4">
-                                {[
-                                    { value: 'per_line',    label: 'لكل بند' },
-                                    { value: 'per_invoice', label: 'للفاتورة الكاملة' },
-                                ].map(opt => (
-                                    <label key={opt.value} className="flex items-center gap-2 cursor-pointer">
-                                        <input
-                                            type="radio"
-                                            name="rounding_mode"
-                                            value={opt.value}
-                                            checked={data.tax.rounding_mode === opt.value}
-                                            onChange={() => setData('tax', { ...data.tax, rounding_mode: opt.value })}
-                                            className="text-primary border-input"
-                                        />
-                                        <span className="text-sm text-slate-700">{opt.label}</span>
-                                    </label>
-                                ))}
-                            </div>
+                {/* Customer Ordering */}
+                <SectionCard icon={QrCode} iconCls="bg-emerald-50 text-emerald-500" title="الطلب الذاتي عبر QR">
+                    <div className="flex items-center justify-between gap-4 py-1">
+                        <div className="flex-1">
+                            <p className="text-sm font-semibold text-slate-700">السماح بإضافة أصناف بعد إرسال الطلب</p>
+                            <p className="text-xs text-slate-400 mt-0.5">عند التفعيل يمكن للعملاء إضافة أصناف إلى طلبهم حتى أثناء التحضير</p>
                         </div>
-
-                        {/* Display breakdown on invoices */}
-                        <TaxToggleRow
-                            checked={data.tax.display_breakdown}
-                            onChange={v => setData('tax', { ...data.tax, display_breakdown: v })}
-                            label="إظهار تفاصيل الضريبة في الفواتير"
-                        />
+                        <button
+                            type="button"
+                            onClick={() => setData('customer_allow_add_after_submit', data.customer_allow_add_after_submit === '1' ? '0' : '1')}
+                            className={`relative w-11 h-6 rounded-full transition-colors duration-200 shrink-0 ${
+                                data.customer_allow_add_after_submit === '1' ? 'bg-emerald-500' : 'bg-slate-200'
+                            }`}
+                        >
+                            <span className={`absolute top-0.5 w-5 h-5 bg-white rounded-full shadow transition-all duration-200 ${
+                                data.customer_allow_add_after_submit === '1' ? 'right-0.5' : 'left-0.5'
+                            }`} />
+                        </button>
                     </div>
                 </SectionCard>
 
@@ -229,7 +146,7 @@ export default function Index({ settings, payment_methods }) {
             </form>
 
             {/* Payment Methods */}
-            <div className="mt-4 max-w-3xl">
+            <div className="mt-4 max-w-3xl mx-auto">
                 <SectionCard icon={CreditCard} iconCls="bg-violet-50 text-violet-500" title="طرق الدفع">
                     <div className="space-y-4">
                         {/* Add new */}
@@ -325,6 +242,24 @@ export default function Index({ settings, payment_methods }) {
                     </div>
                 </SectionCard>
             </div>
+
+            {/* Toast notification */}
+            {toast && (
+                <div className={`fixed bottom-6 left-1/2 -translate-x-1/2 z-50 flex items-center gap-3 px-5 py-3.5 rounded-2xl shadow-xl border text-sm font-semibold transition-all animate-in fade-in slide-in-from-bottom-4 ${
+                    toast.type === 'success'
+                        ? 'bg-emerald-50 border-emerald-200 text-emerald-800'
+                        : 'bg-red-50 border-red-200 text-red-800'
+                }`}>
+                    {toast.type === 'success'
+                        ? <CheckCircle2 size={18} className="text-emerald-500 shrink-0" />
+                        : <AlertCircle  size={18} className="text-red-500 shrink-0" />
+                    }
+                    {toast.message}
+                    <button onClick={() => setToast(null)} className="mr-2 opacity-50 hover:opacity-100 transition-opacity">
+                        <X size={14} />
+                    </button>
+                </div>
+            )}
         </AdminLayout>
     );
 }
