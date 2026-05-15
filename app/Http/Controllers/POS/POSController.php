@@ -7,13 +7,13 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 
+use App\Models\Area;
+use App\Models\Category;
 use App\Models\Customer;
 use App\Models\Invoice;
 use App\Models\InvoiceTax;
-use App\Models\Order;
-use App\Models\Area;
-use App\Models\Category;
 use App\Models\MenuItem;
+use App\Models\Order;
 use App\Models\PaymentMethod;
 use App\Models\Setting;
 use App\Models\Table;
@@ -139,20 +139,21 @@ class POSController extends Controller
             'private_notes'                => 'nullable|string',
         ]);
 
-        $discount  = (float) ($validated['discount'] ?? 0);
-        $totalPaid = 0;
+        $discount          = (float) ($validated['discount'] ?? 0);
+        $totalWithDiscount = max(0, $order->total_amount - $discount);
+        $totalPaid         = 0;
 
-        DB::transaction(function () use ($order, $validated, $discount, &$totalPaid) {
+        DB::transaction(function () use ($order, $validated, $discount, $totalWithDiscount, &$totalPaid) {
             // ── Resolve / create customer ──────────────────────────────────
             $customer = null;
 
-            if (! empty($validated['new_customer']['name'])) {
+            if (!empty($validated['new_customer']['name'])) {
                 $customer = Customer::create($validated['new_customer']);
                 $order->logEvent('customer_linked',
                     "تم ربط عميل جديد: {$customer->name}",
                     ['customer_id' => $customer->id, 'name' => $customer->name]
                 );
-            } elseif (! empty($validated['customer_id'])) {
+            } elseif (!empty($validated['customer_id'])) {
                 $customer = Customer::find($validated['customer_id']);
             }
 
@@ -163,7 +164,7 @@ class POSController extends Controller
             // ── Wallet deduction ───────────────────────────────────────────
             $walletUsed = 0;
             if ($customer && ($validated['wallet_amount'] ?? 0) > 0) {
-                $walletUsed = min((float) $validated['wallet_amount'], (float) $customer->wallet_balance);
+                $walletUsed = min($validated['wallet_amount'], $customer->wallet_balance);
                 if ($walletUsed > 0) {
                     $customer->decrement('wallet_balance', $walletUsed);
                     $order->logEvent('wallet_used',
@@ -180,7 +181,7 @@ class POSController extends Controller
             $order->loadMissing('invoice');
             $invoice = $order->invoice;
 
-            if (! $invoice) {
+            if (!$invoice) {
                 // ── 1. Load items with tax configuration ───────────────────
                 $order->load(['items.taxRates', 'items.menuItem', 'items.addons.taxRates']);
 
@@ -203,7 +204,7 @@ class POSController extends Controller
                     'invoice_number'      => Invoice::generateNumber(),
                     'subtotal'            => $taxResult->subtotalBeforeTax,
                     'discount'            => $discount,
-                    'tax_rate'            => 0,        // deprecated column; kept for pre-tax-engine rows
+                    'tax_rate'            => 0,
                     'tax_amount'          => $taxResult->totalTax,
                     'total'               => $invoiceTotal,
                     'prices_included_tax' => $taxResult->pricesIncludedTax,
@@ -214,7 +215,6 @@ class POSController extends Controller
                     'private_notes'       => $validated['private_notes'] ?? $order->private_notes,
                     'issued_at'           => now(),
                 ]);
-
                 $order->logEvent('invoice_created',
                     "تم إنشاء الفاتورة {$invoice->invoice_number}",
                     ['invoice_id' => $invoice->id]
@@ -257,7 +257,7 @@ class POSController extends Controller
             }
 
             // ── Payment entries (append — never delete) ────────────────────
-            if (! empty($validated['payments'])) {
+            if (!empty($validated['payments'])) {
                 foreach ($validated['payments'] as $payment) {
                     if ($payment['amount'] > 0) {
                         $invoice->paymentEntries()->create([

@@ -56,10 +56,8 @@ export default function Show({ invoice, payment_methods }) {
 
     const subtotal     = Number(invoice.subtotal);
     const discount     = Number(invoice.discount);
-    const taxAmount    = Number(invoice.tax_amount);     // legacy fallback
+    const taxAmount    = Number(invoice.tax_amount);
     const total        = Number(invoice.total);
-    const hasTaxBreakdown = (invoice.taxes?.length ?? 0) > 0;
-    const displayTaxBreakdown = settings?.['tax.display_breakdown'] === '1' || settings?.['tax.display_breakdown'] === true;
     const paidAmount   = Number(invoice.paid_amount);
     const walletAmount = Number(invoice.wallet_amount);
     const refunded     = invoice.payment_entries
@@ -161,26 +159,12 @@ export default function Show({ invoice, payment_methods }) {
                                     <span>الخصم</span>
                                 </div>
                             )}
-                            {/* Tax lines — per-tax breakdown for new invoices, single line for legacy */}
-                            {hasTaxBreakdown
-                                ? invoice.taxes.map(tax => (
-                                    <div key={tax.id} className="flex justify-between text-slate-500 font-semibold">
-                                        <span className="font-sans">+{Number(tax.tax_amount).toFixed(2)} {currency}</span>
-                                        <span>
-                                            {tax.tax_name}
-                                            <span className="text-slate-400 font-sans text-[11px] mr-1">
-                                                ({parseFloat(tax.rate).toFixed(2)}%)
-                                            </span>
-                                        </span>
-                                    </div>
-                                ))
-                                : taxAmount > 0 && (
-                                    <div className="flex justify-between text-slate-500 font-semibold">
-                                        <span className="font-sans">+{taxAmount.toFixed(2)} {currency}</span>
-                                        <span>الضريبة</span>
-                                    </div>
-                                )
-                            }
+                            {taxAmount > 0 && (
+                                <div className="flex justify-between text-slate-500 font-semibold">
+                                    <span className="font-sans">+{taxAmount.toFixed(2)} {currency}</span>
+                                    <span>الضريبة</span>
+                                </div>
+                            )}
                             <div className="flex justify-between font-bold text-slate-800 border-t border-slate-100 pt-2">
                                 <span className="font-sans">{total.toFixed(2)} {currency}</span>
                                 <span>الإجمالي</span>
@@ -279,42 +263,27 @@ export default function Show({ invoice, payment_methods }) {
                         return (
                             <SectionCard title="الأصناف" icon={ShoppingCart} iconCls="bg-orange-50 text-orange-400">
                                 <div className="space-y-2">
-                                    {displayItems.map(item => {
-                                        const lineTotal  = Number(useSnapshot ? item.unit_price : item.price) * item.quantity;
-                                        // Use immutable snapshot tax fields when present (new invoices)
-                                        const itemSubtotal = useSnapshot && item.subtotal_before_tax != null
-                                            ? Number(item.subtotal_before_tax)
-                                            : lineTotal;
-                                        const itemTax = useSnapshot ? (item.tax_amount != null ? Number(item.tax_amount) : null) : null;
-                                        return (
-                                            <div key={item.id} className="flex justify-between text-sm">
-                                                <div>
-                                                    <span className="font-semibold text-slate-700">
-                                                        {item.quantity}× {useSnapshot
-                                                            ? item.name
-                                                            : (item.name ?? item.menu_item?.name ?? '[صنف محذوف]')}
-                                                    </span>
-                                                    {item.addons?.map(a => (
-                                                        <div key={a.id} className="text-[11px] text-violet-500">
-                                                            + {useSnapshot
-                                                                ? a.name
-                                                                : (a.name ?? a.menu_item?.name ?? '[إضافة محذوفة]')}
-                                                        </div>
-                                                    ))}
-                                                </div>
-                                                <div className="text-left shrink-0 mr-2">
-                                                    <span className="font-sans font-semibold text-slate-500">
-                                                        {itemSubtotal.toFixed(2)}
-                                                    </span>
-                                                    {displayTaxBreakdown && itemTax != null && itemTax > 0 && (
-                                                        <div className="text-[10px] font-sans text-amber-600">
-                                                            +{itemTax.toFixed(2)} ض
-                                                        </div>
-                                                    )}
-                                                </div>
+                                    {displayItems.map(item => (
+                                        <div key={item.id} className="flex justify-between text-sm">
+                                            <div>
+                                                <span className="font-semibold text-slate-700">
+                                                    {item.quantity}× {useSnapshot
+                                                        ? item.name
+                                                        : (item.name ?? item.menu_item?.name ?? '[صنف محذوف]')}
+                                                </span>
+                                                {(useSnapshot ? item.addons : item.addons)?.map(a => (
+                                                    <div key={a.id} className="text-[11px] text-violet-500">
+                                                        + {useSnapshot
+                                                            ? a.name
+                                                            : (a.name ?? a.menu_item?.name ?? '[إضافة محذوفة]')}
+                                                    </div>
+                                                ))}
                                             </div>
-                                        );
-                                    })}
+                                            <span className="font-sans font-semibold text-slate-500">
+                                                {(Number(useSnapshot ? item.unit_price : item.price) * item.quantity).toFixed(2)}
+                                            </span>
+                                        </div>
+                                    ))}
                                 </div>
                             </SectionCard>
                         );

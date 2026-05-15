@@ -5,7 +5,7 @@ import {
     Search, Eye, X, ChevronUp, ChevronDown, ChevronsUpDown,
     ShoppingCart, Clock, ChefHat, CheckCircle2,
     CheckCheck, Ban, BadgeCheck, CircleDashed, CircleOff,
-    Package, Truck,
+    Package, Truck, RotateCcw,
 } from 'lucide-react';
 import { Button } from '@/Components/ui/button';
 import { Input } from '@/Components/ui/input';
@@ -27,10 +27,12 @@ const TYPE_MAP = {
     delivery: { label: 'توصيل', icon: Truck,    cls: 'bg-sky-50 text-sky-600 ring-1 ring-sky-200/80' },
 };
 const PAYMENT_MAP = {
-    paid:           { label: 'مدفوع',     icon: BadgeCheck,   cls: 'bg-emerald-50 text-emerald-600 ring-1 ring-emerald-200/80' },
-    partially_paid: { label: 'جزئي',      icon: CircleDashed, cls: 'bg-amber-50 text-amber-600 ring-1 ring-amber-200/80' },
-    pending:        { label: 'غير مدفوع', icon: CircleOff,    cls: 'bg-slate-50 text-slate-400 ring-1 ring-slate-200' },
-    unpaid:         { label: 'غير مدفوع', icon: CircleOff,    cls: 'bg-slate-50 text-slate-400 ring-1 ring-slate-200' },
+    paid:       { label: 'مدفوع',       icon: BadgeCheck,   cls: 'bg-emerald-50 text-emerald-600 ring-1 ring-emerald-200/80' },
+    partial:    { label: 'جزئي',        icon: CircleDashed, cls: 'bg-amber-50 text-amber-600 ring-1 ring-amber-200/80' },
+    draft:      { label: 'غير مدفوع',   icon: CircleOff,    cls: 'bg-slate-50 text-slate-400 ring-1 ring-slate-200' },
+    void:       { label: 'ملغاة',       icon: Ban,          cls: 'bg-red-50 text-red-400 ring-1 ring-red-200/80' },
+    refunded:   { label: 'مسترد',       icon: RotateCcw,    cls: 'bg-blue-50 text-blue-500 ring-1 ring-blue-200/80' },
+    unpaid:     { label: 'غير مدفوع',   icon: CircleOff,    cls: 'bg-slate-50 text-slate-400 ring-1 ring-slate-200' },
 };
 
 /* ── Pill badge ─────────────────────────────────── */

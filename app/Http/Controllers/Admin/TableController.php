@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Admin;
 
 use App\Http\Controllers\Controller;
 use Illuminate\Http\Request;
+use Illuminate\Support\Str;
 
 use App\Models\Table;
 use App\Models\Area;
@@ -57,5 +58,16 @@ class TableController extends Controller
     {
         $table->delete();
         return redirect()->back()->with('success', 'تم حذف الطاولة');
+    }
+
+    public function generateQr(Table $table)
+    {
+        if ($table->qr_token) {
+            return back()->with('info', 'رمز QR موجود بالفعل');
+        }
+
+        $table->update(['qr_token' => (string) Str::uuid()]);
+
+        return back()->with('success', 'تم إنشاء رمز QR بنجاح');
     }
 }

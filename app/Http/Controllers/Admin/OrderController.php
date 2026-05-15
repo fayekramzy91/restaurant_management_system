@@ -57,6 +57,7 @@ class OrderController extends Controller
             'items.menuItem',
             'items.addons.menuItem',
             'invoice.paymentEntries.paymentMethod',
+            'invoice.paymentEntries.processedBy',
             'timeline.user',
         ]);
 
@@ -73,6 +74,14 @@ class OrderController extends Controller
         ]);
 
         $order->update($validated);
+
+        if ($order->invoice) {
+            $order->invoice->update([
+                'notes'         => $validated['notes'] ?? $order->invoice->notes,
+                'private_notes' => $validated['private_notes'] ?? $order->invoice->private_notes,
+            ]);
+        }
+
         $order->logEvent('notes_updated', 'تم تحديث ملاحظات الطلب');
 
         return back()->with('success', 'notes_updated');

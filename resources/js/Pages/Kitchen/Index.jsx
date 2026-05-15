@@ -1,5 +1,5 @@
-import { Head, useForm } from '@inertiajs/react';
-import { ChefHat, Clock, CheckCircle2, AlertCircle, Utensils, Plus, ClipboardList, Timer, PlayCircle } from 'lucide-react';
+import { Head, useForm, router } from '@inertiajs/react';
+import { ChefHat, Clock, CheckCircle2, AlertCircle, Utensils, Plus, ClipboardList, Timer, PlayCircle, LogOut, ChevronLeft, ChevronRight } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useMemo, useState, useEffect } from 'react';
 
@@ -57,8 +57,8 @@ function WallClock() {
     const date = now.toLocaleDateString('ar-SA', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
 
     return (
-        <div className="flex flex-col items-end bg-gray-800/50 px-6 py-3 rounded-2xl border border-gray-700">
-            <span className="text-3xl font-black font-sans tracking-widest text-white tabular-nums">{time}</span>
+        <div className="flex flex-col items-end bg-gray-800/50 px-4 py-2 rounded-2xl border border-gray-700">
+            <span className="text-2xl font-black font-sans tracking-widest text-white tabular-nums">{time}</span>
             <span className="text-[11px] font-bold text-gray-500 mt-0.5">{date}</span>
         </div>
     );
@@ -66,6 +66,7 @@ function WallClock() {
 
 export default function Index({ orders }) {
     const { post, processing } = useForm();
+    const [sidebarOpen, setSidebarOpen] = useState(true);
 
     const startPreparing = (orderId) => post(route('kitchen.start', orderId));
     const markReady      = (orderId) => post(route('kitchen.ready', orderId));
@@ -79,10 +80,10 @@ export default function Index({ orders }) {
         const addonTotals = {};
         orders.forEach(order => {
             order.items.forEach(item => {
-                const n = item.menu_item?.name;
+                const n = item.name ?? item.menu_item?.name;
                 if (n) itemTotals[n] = (itemTotals[n] || 0) + item.quantity;
                 item.addons?.forEach(addon => {
-                    const an = addon.menu_item?.name;
+                    const an = addon.name ?? addon.menu_item?.name;
                     if (an) addonTotals[an] = (addonTotals[an] || 0) + addon.quantity;
                 });
             });
@@ -95,95 +96,119 @@ export default function Index({ orders }) {
             <Head title="شاشة المطبخ (KDS)" />
 
             {/* ── Header ── */}
-            <header className="bg-gray-900 border-b border-gray-800 px-8 py-6 flex justify-between items-center z-10">
-                <div className="flex items-center gap-4">
-                    <div className="bg-[#ee1d23] p-3 rounded-2xl shadow-lg shadow-red-900/20">
-                        <ChefHat size={32} />
+            <header className="bg-gray-900 border-b border-gray-800 px-6 py-3 flex justify-between items-center z-10">
+                <div className="flex items-center gap-3">
+                    <div className="bg-[#ee1d23] p-2 rounded-xl shadow-lg shadow-red-900/20">
+                        <ChefHat size={22} />
                     </div>
                     <div>
-                        <h1 className="text-3xl font-black">شاشة المطبخ</h1>
-                        <p className="text-gray-500 font-bold">متابعة تحضير الطلبات في الوقت الفعلي</p>
+                        <h1 className="text-xl font-black">شاشة المطبخ</h1>
+                        <p className="text-gray-500 font-bold text-xs">متابعة تحضير الطلبات في الوقت الفعلي</p>
                     </div>
                 </div>
 
-                <div className="flex items-center gap-4">
+                <div className="flex items-center gap-3">
                     {/* New orders badge */}
                     {newCount > 0 && (
-                        <div className="flex items-center gap-3 bg-red-900/30 px-6 py-3 rounded-2xl border border-red-700/50 animate-pulse">
+                        <div className="flex items-center gap-2 bg-red-900/30 px-4 py-2 rounded-2xl border border-red-700/50 animate-pulse">
                             <div className="flex flex-col items-end">
                                 <span className="text-[10px] font-black text-red-400 uppercase">طلبات جديدة</span>
-                                <span className="text-2xl font-black text-white font-sans">{newCount}</span>
+                                <span className="text-lg font-black text-white font-sans">{newCount}</span>
                             </div>
-                            <div className="w-10 h-10 rounded-full bg-red-600/30 flex items-center justify-center">
-                                <PlayCircle size={20} className="text-red-400" />
+                            <div className="w-8 h-8 rounded-full bg-red-600/30 flex items-center justify-center">
+                                <PlayCircle size={16} className="text-red-400" />
                             </div>
                         </div>
                     )}
 
                     {/* Active (preparing) counter */}
-                    <div className="flex items-center gap-3 bg-gray-800/50 px-6 py-3 rounded-2xl border border-gray-700">
+                    <div className="flex items-center gap-2 bg-gray-800/50 px-4 py-2 rounded-2xl border border-gray-700">
                         <div className="flex flex-col items-end">
                             <span className="text-[10px] font-black text-gray-500 uppercase">قيد التحضير</span>
-                            <span className="text-2xl font-black text-white font-sans">{activeCount}</span>
+                            <span className="text-lg font-black text-white font-sans">{activeCount}</span>
                         </div>
-                        <div className="w-10 h-10 rounded-full border-2 border-blue-500/30 flex items-center justify-center animate-spin-slow">
-                            <Clock size={18} className="text-blue-400" />
+                        <div className="w-8 h-8 rounded-full border-2 border-blue-500/30 flex items-center justify-center animate-spin-slow">
+                            <Clock size={15} className="text-blue-400" />
                         </div>
                     </div>
 
                     <WallClock />
+
+                    <button
+                        onClick={() => router.post(route('logout'))}
+                        className="flex items-center gap-2 bg-gray-800 hover:bg-gray-700 border border-gray-700 px-4 py-2 rounded-xl text-gray-300 hover:text-white text-sm font-bold transition-colors"
+                        title="تسجيل الخروج"
+                    >
+                        <LogOut size={16} />
+                        خروج
+                    </button>
                 </div>
             </header>
 
             <div className="flex-1 flex overflow-hidden">
                 {/* ── Right sidebar: summary ── */}
-                <aside className="w-72 md:w-80 bg-gray-800/30 border-l border-gray-800 flex flex-col overflow-hidden">
-                    <div className="p-6 border-b border-gray-800 flex items-center gap-2 bg-gray-800/50">
-                        <ClipboardList className="text-[#ee1d23]" size={20} />
-                        <h3 className="font-black text-lg">ملخص التجهيز</h3>
+                <aside className={`${sidebarOpen ? 'w-72 md:w-80' : 'w-12'} transition-all duration-300 bg-gray-800/30 border-l border-gray-800 flex flex-col overflow-hidden shrink-0`}>
+                    <div className="p-4 border-b border-gray-800 flex items-center gap-2 bg-gray-800/50 justify-between">
+                        {sidebarOpen && (
+                            <>
+                                <ClipboardList className="text-[#ee1d23]" size={18} />
+                                <h3 className="font-black text-base flex-1">ملخص التجهيز</h3>
+                            </>
+                        )}
+                        <button
+                            onClick={() => setSidebarOpen(v => !v)}
+                            className="w-7 h-7 rounded-lg bg-gray-700/50 hover:bg-gray-600/50 border border-gray-600/50 flex items-center justify-center text-gray-400 hover:text-white transition-colors shrink-0"
+                            title={sidebarOpen ? 'إخفاء الملخص' : 'إظهار الملخص'}
+                        >
+                            {sidebarOpen ? <ChevronLeft size={14} /> : <ChevronRight size={14} />}
+                        </button>
                     </div>
 
-                    <div className="flex-1 overflow-y-auto p-6 space-y-8 custom-scrollbar">
-                        <div>
-                            <h4 className="text-[10px] font-black text-gray-500 uppercase tracking-widest mb-4 flex items-center gap-2">
-                                <div className="w-1 h-3 bg-red-500 rounded-full" />
-                                الأصناف الرئيسية
-                            </h4>
-                            <div className="space-y-2">
-                                {Object.entries(summary.items).length > 0 ? (
-                                    Object.entries(summary.items).map(([name, qty]) => (
-                                        <div key={name} className="flex justify-between items-center p-3 bg-gray-800/50 rounded-xl border border-gray-700/50">
-                                            <span className="font-bold text-gray-200">{name}</span>
-                                            <span className="bg-white text-gray-900 font-black font-sans px-3 py-1 rounded-lg text-lg">{qty}</span>
+                    {sidebarOpen && (
+                        <>
+                            <div className="flex-1 overflow-y-auto p-6 space-y-8 custom-scrollbar">
+                                <div>
+                                    <h4 className="text-[10px] font-black text-gray-500 uppercase tracking-widest mb-4 flex items-center gap-2">
+                                        <div className="w-1 h-3 bg-red-500 rounded-full" />
+                                        الأصناف الرئيسية
+                                    </h4>
+                                    <div className="space-y-2">
+                                        {Object.entries(summary.items).length > 0 ? (
+                                            Object.entries(summary.items).map(([name, qty]) => (
+                                                <div key={name} className="flex justify-between items-center p-3 bg-gray-800/50 rounded-xl border border-gray-700/50">
+                                                    <span className="font-bold text-gray-200">{name}</span>
+                                                    <span className="bg-white text-gray-900 font-black font-sans px-3 py-1 rounded-lg text-lg">{qty}</span>
+                                                </div>
+                                            ))
+                                        ) : (
+                                            <p className="text-xs text-gray-600 italic">لا توجد أصناف حالياً</p>
+                                        )}
+                                    </div>
+                                </div>
+
+                                {Object.entries(summary.addons).length > 0 && (
+                                    <div>
+                                        <h4 className="text-[10px] font-black text-gray-500 uppercase tracking-widest mb-4 flex items-center gap-2">
+                                            <div className="w-1 h-3 bg-blue-500 rounded-full" />
+                                            الإضافات المطلوبة
+                                        </h4>
+                                        <div className="space-y-2">
+                                            {Object.entries(summary.addons).map(([name, qty]) => (
+                                                <div key={name} className="flex justify-between items-center p-3 bg-blue-900/10 rounded-xl border border-blue-900/20 text-blue-400">
+                                                    <span className="font-bold text-sm">{name}</span>
+                                                    <span className="bg-blue-500 text-white font-black font-sans px-2 py-0.5 rounded text-base">{qty}</span>
+                                                </div>
+                                            ))}
                                         </div>
-                                    ))
-                                ) : (
-                                    <p className="text-xs text-gray-600 italic">لا توجد أصناف حالياً</p>
+                                    </div>
                                 )}
                             </div>
-                        </div>
 
-                        {Object.entries(summary.addons).length > 0 && (
-                            <div>
-                                <h4 className="text-[10px] font-black text-gray-500 uppercase tracking-widest mb-4 flex items-center gap-2">
-                                    <div className="w-1 h-3 bg-blue-500 rounded-full" />
-                                    الإضافات المطلوبة
-                                </h4>
-                                <div className="space-y-2">
-                                    {Object.entries(summary.addons).map(([name, qty]) => (
-                                        <div key={name} className="flex justify-between items-center p-3 bg-blue-900/10 rounded-xl border border-blue-900/20 text-blue-400">
-                                            <span className="font-bold text-sm">{name}</span>
-                                            <span className="bg-blue-500 text-white font-black font-sans px-2 py-0.5 rounded text-base">{qty}</span>
-                                        </div>
-                                    ))}
-                                </div>
+                            <div className="p-4 bg-gray-900/50 border-t border-gray-800 text-center">
+                                <p className="text-[10px] font-bold text-gray-600">يتم التحديث تلقائياً عند إضافة طلبات جديدة</p>
                             </div>
-                        )}
-                    </div>
-
-                    <div className="p-6 bg-gray-900/50 border-t border-gray-800 text-center">
-                        <p className="text-[10px] font-bold text-gray-600">يتم التحديث تلقائياً عند إضافة طلبات جديدة</p>
-                    </div>
+                        </>
+                    )}
                 </aside>
 
                 {/* ── Orders grid ── */}
@@ -211,20 +236,25 @@ export default function Index({ orders }) {
                                         {isNew ? '🔔 طلب جديد' : '👨‍🍳 قيد التحضير'}
                                     </div>
 
-                                    <div className="p-6 flex flex-col">
+                                    <div className="p-4 flex flex-col">
                                         {/* Order meta */}
-                                        <div className="flex justify-between items-start mb-6">
+                                        <div className="flex justify-between items-start mb-3">
                                             <div>
-                                                <h3 className="text-2xl font-black text-white mb-1">
+                                                <h3 className="text-lg font-black text-white mb-1">
                                                     {order.type === 'dine_in' ? `طاولة ${order.table?.name}` : 'طلب خارجي'}
                                                 </h3>
                                                 <div className="flex items-center gap-2 text-gray-500 font-bold text-xs">
-                                                    <Clock size={14} />
+                                                    <Clock size={12} />
                                                     <span>{new Date(order.created_at).toLocaleTimeString('ar-SA', { hour: '2-digit', minute: '2-digit', hour12: true })}</span>
                                                 </div>
                                             </div>
-                                            <div className="flex flex-col items-end gap-2">
-                                                <div className="text-4xl font-black text-gray-800 font-sans leading-none">#{order.id}</div>
+                                            <div className="flex flex-col items-end gap-1.5">
+                                                <div className="text-2xl font-black text-gray-800 font-sans leading-none">#{order.id}</div>
+                                                {order.source === 'customer' && (
+                                                    <span className="text-[9px] font-black uppercase tracking-widest bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 px-2 py-0.5 rounded-lg">
+                                                        عميل
+                                                    </span>
+                                                )}
                                                 {/* Timer only when actively preparing */}
                                                 {!isNew && maxDur > 0 && (
                                                     <OrderTimer
@@ -236,16 +266,16 @@ export default function Index({ orders }) {
                                         </div>
 
                                         {/* Items list */}
-                                        <div className="space-y-3 mb-6 overflow-y-auto max-h-[50vh] pr-1 custom-scrollbar">
+                                        <div className="space-y-2 mb-3 overflow-y-auto max-h-[50vh] pr-1 custom-scrollbar">
                                             {order.items.map((item) => (
-                                                <div key={item.id} className="bg-gray-800/50 p-4 rounded-3xl border border-gray-700/50">
-                                                    <div className="flex gap-3">
-                                                        <span className="w-10 h-10 rounded-xl bg-[#feca0b] flex items-center justify-center font-black text-xl text-gray-900 font-sans shrink-0">
+                                                <div key={item.id} className="bg-gray-800/50 p-2.5 rounded-2xl border border-gray-700/50">
+                                                    <div className="flex gap-2.5">
+                                                        <span className="w-8 h-8 rounded-lg bg-[#feca0b] flex items-center justify-center font-black text-base text-gray-900 font-sans shrink-0">
                                                             {item.quantity}
                                                         </span>
-                                                        <div className="flex-1">
+                                                        <div className="flex-1 min-w-0">
                                                             <div className="flex items-center justify-between gap-2">
-                                                                <h4 className="text-lg font-black text-gray-100">{item.menu_item?.name}</h4>
+                                                                <h4 className="text-sm font-black text-gray-100 truncate">{item.name ?? item.menu_item?.name ?? '[صنف محذوف]'}</h4>
                                                                 {item.menu_item?.preparing_duration && (
                                                                     <span className="flex items-center gap-1 text-[11px] font-black text-blue-400 bg-blue-400/10 px-2 py-0.5 rounded-lg border border-blue-400/20 shrink-0">
                                                                         <Clock size={10} />
@@ -255,19 +285,19 @@ export default function Index({ orders }) {
                                                             </div>
 
                                                             {item.addons?.length > 0 && (
-                                                                <div className="mt-2 flex flex-wrap gap-2">
+                                                                <div className="mt-1.5 flex flex-wrap gap-1.5">
                                                                     {item.addons.map((addon) => (
                                                                         <div key={addon.id} className="flex items-center gap-1 text-blue-400 bg-blue-400/10 px-2 py-0.5 rounded-lg text-[10px] font-bold border border-blue-400/20">
                                                                             <Plus size={10} />
-                                                                            <span>{addon.quantity}x {addon.menu_item?.name}</span>
+                                                                            <span>{addon.quantity}x {addon.name ?? addon.menu_item?.name ?? '[إضافة محذوفة]'}</span>
                                                                         </div>
                                                                     ))}
                                                                 </div>
                                                             )}
 
                                                             {item.notes && (
-                                                                <div className="mt-3 flex items-start gap-1 text-yellow-500 bg-yellow-500/10 p-2 rounded-xl text-[11px] font-bold border border-yellow-500/20">
-                                                                    <AlertCircle size={14} className="mt-0.5 shrink-0" />
+                                                                <div className="mt-2 flex items-start gap-1 text-yellow-500 bg-yellow-500/10 p-2 rounded-xl text-[11px] font-bold border border-yellow-500/20">
+                                                                    <AlertCircle size={12} className="mt-0.5 shrink-0" />
                                                                     <p className="leading-relaxed">{item.notes}</p>
                                                                 </div>
                                                             )}
@@ -282,18 +312,18 @@ export default function Index({ orders }) {
                                             <button
                                                 onClick={() => startPreparing(order.id)}
                                                 disabled={processing}
-                                                className="w-full py-5 rounded-3xl bg-[#ee1d23] text-white font-black text-xl flex items-center justify-center gap-3 shadow-xl shadow-red-900/20 transition-all hover:bg-[#c4181d] active:scale-95 disabled:opacity-50"
+                                                className="w-full py-3 rounded-3xl bg-[#ee1d23] text-white font-black text-base flex items-center justify-center gap-2 shadow-xl shadow-red-900/20 transition-all hover:bg-[#c4181d] active:scale-95 disabled:opacity-50"
                                             >
-                                                <PlayCircle size={24} />
+                                                <PlayCircle size={20} />
                                                 بدء التحضير
                                             </button>
                                         ) : (
                                             <button
                                                 onClick={() => markReady(order.id)}
                                                 disabled={processing}
-                                                className="w-full py-5 rounded-3xl bg-white text-gray-900 font-black text-xl flex items-center justify-center gap-3 shadow-xl shadow-white/5 transition-all hover:bg-green-500 hover:text-white active:scale-95 disabled:opacity-50"
+                                                className="w-full py-3 rounded-3xl bg-white text-gray-900 font-black text-base flex items-center justify-center gap-2 shadow-xl shadow-white/5 transition-all hover:bg-green-500 hover:text-white active:scale-95 disabled:opacity-50"
                                             >
-                                                <CheckCircle2 size={24} />
+                                                <CheckCircle2 size={20} />
                                                 تم التجهيز
                                             </button>
                                         )}
