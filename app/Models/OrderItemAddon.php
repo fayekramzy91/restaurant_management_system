@@ -28,4 +28,20 @@ class OrderItemAddon extends Model
     {
         return $this->name ?? $this->menuItem?->name ?? '[إضافة محذوفة]';
     }
+
+    /**
+     * Tax rates for this addon, resolved via the menu_item_tax_rates pivot.
+     * Same join-key technique as OrderItem::taxRates().
+     */
+    public function taxRates()
+    {
+        return $this->belongsToMany(
+            TaxRate::class,
+            'menu_item_tax_rates',
+            'menu_item_id',
+            'tax_rate_id',
+            'menu_item_id',
+            'id',
+        )->orderBy('apply_order');
+    }
 }

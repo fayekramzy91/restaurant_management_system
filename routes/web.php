@@ -172,6 +172,9 @@ Route::middleware('auth')->group(function () {
         ->middleware('permission:payments.process')
         ->name('pos.process-payment');
 
+    Route::post('/pos/calculate-tax-preview', [POSController::class, 'calculateTaxPreview'])
+        ->name('pos.tax-preview');
+
     Route::get('/pos/customers/search', [POSCustomerController::class, 'search'])
         ->middleware('permission:customers.view')
         ->name('pos.customers.search');
