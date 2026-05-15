@@ -196,7 +196,7 @@ export default function TableOrder({ table, categories, activeOrder, addons }) {
                                     <div className="flex-1">
                                         <div className="flex justify-between items-start">
                                             <div className="flex items-center gap-2">
-                                                <h5 className="text-sm font-black text-gray-800">{item.menu_item?.name}</h5>
+                                                <h5 className="text-sm font-black text-gray-800">{item.name ?? item.menu_item?.name ?? '[صنف محذوف]'}</h5>
                                                 {/* Addons Button */}
                                                 <button 
                                                     onClick={() => openAddonModal(item)}
@@ -227,7 +227,7 @@ export default function TableOrder({ table, categories, activeOrder, addons }) {
                                                     <div key={addonRelation.id} className="flex justify-between items-center text-[10px] text-purple-600 font-bold bg-purple-50 px-2 py-0.5 rounded-md">
                                                         <div className="flex items-center gap-1">
                                                             <span>{addonRelation.quantity}x</span>
-                                                            <span>{addonRelation.menu_item?.name}</span>
+                                                            <span>{addonRelation.name ?? addonRelation.menu_item?.name ?? '[إضافة محذوفة]'}</span>
                                                         </div>
                                                         <span className="font-sans">{(addonRelation.price * addonRelation.quantity).toFixed(2)}</span>
                                                     </div>
@@ -301,7 +301,7 @@ export default function TableOrder({ table, categories, activeOrder, addons }) {
             <Modal show={isAddonModalOpen} onClose={() => setIsAddonModalOpen(false)} maxWidth="md">
                 <div className="p-6 text-right">
                     <div className="flex justify-between items-center mb-6 border-b pb-4">
-                        <h2 className="text-xl font-black text-gray-800">إضافات: {editingCartItem?.menu_item?.name}</h2>
+                        <h2 className="text-xl font-black text-gray-800">إضافات: {editingCartItem?.name ?? editingCartItem?.menu_item?.name}</h2>
                         <button onClick={() => setIsAddonModalOpen(false)} className="p-2 hover:bg-gray-100 rounded-full text-gray-400">
                             <X size={20} />
                         </button>

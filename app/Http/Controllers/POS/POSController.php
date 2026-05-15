@@ -11,6 +11,7 @@ use App\Models\Customer;
 use App\Models\Invoice;
 use App\Models\InvoiceTax;
 use App\Models\Order;
+use App\Models\Table;
 use App\Models\Area;
 use App\Models\Category;
 use App\Models\MenuItem;
@@ -20,6 +21,9 @@ use App\Models\Table;
 use App\Models\WalletTransaction;
 use App\Services\InvoiceItemSnapshotter;
 use App\Services\Tax\TaxCalculator;
+use App\Models\WalletTransaction;
+use App\Services\InvoiceItemSnapshotter;
+use Illuminate\Support\Facades\DB;
 use Inertia\Inertia;
 
 class POSController extends Controller
@@ -142,17 +146,17 @@ class POSController extends Controller
         $discount  = (float) ($validated['discount'] ?? 0);
         $totalPaid = 0;
 
-        DB::transaction(function () use ($order, $validated, $discount, &$totalPaid) {
+        DB::transaction(function () use ($order, $validated, $discount, $totalWithDiscount, &$totalPaid) {
             // ── Resolve / create customer ──────────────────────────────────
             $customer = null;
 
-            if (! empty($validated['new_customer']['name'])) {
+            if (!empty($validated['new_customer']['name'])) {
                 $customer = Customer::create($validated['new_customer']);
                 $order->logEvent('customer_linked',
                     "تم ربط عميل جديد: {$customer->name}",
                     ['customer_id' => $customer->id, 'name' => $customer->name]
                 );
-            } elseif (! empty($validated['customer_id'])) {
+            } elseif (!empty($validated['customer_id'])) {
                 $customer = Customer::find($validated['customer_id']);
             }
 
@@ -163,7 +167,7 @@ class POSController extends Controller
             // ── Wallet deduction ───────────────────────────────────────────
             $walletUsed = 0;
             if ($customer && ($validated['wallet_amount'] ?? 0) > 0) {
-                $walletUsed = min((float) $validated['wallet_amount'], (float) $customer->wallet_balance);
+                $walletUsed = min($validated['wallet_amount'], $customer->wallet_balance);
                 if ($walletUsed > 0) {
                     $customer->decrement('wallet_balance', $walletUsed);
                     $order->logEvent('wallet_used',
@@ -180,41 +184,23 @@ class POSController extends Controller
             $order->loadMissing('invoice');
             $invoice = $order->invoice;
 
-            if (! $invoice) {
-                // ── 1. Load items with tax configuration ───────────────────
-                $order->load(['items.taxRates', 'items.menuItem', 'items.addons.taxRates']);
-
-                // ── 2. Calculate taxes (pure, no DB writes) ────────────────
-                $settings  = Setting::getAllAsArray();
-                $taxResult = app(TaxCalculator::class)->calculateForCart(
-                    $order->items,
-                    $order->type,
-                    $settings,
-                );
-
-                // ── 3. Effective total after tax and discount ──────────────
-                $invoiceTotal = max(0.0, $taxResult->totalAfterTax - $discount);
-
-                // ── 4. Create the invoice using tax-aware totals ───────────
+            if (!$invoice) {
                 $invoice = Invoice::create([
-                    'order_id'            => $order->id,
-                    'branch_id'           => $order->branch_id,
-                    'customer_id'         => $customer?->id ?? $order->customer_id,
-                    'invoice_number'      => Invoice::generateNumber(),
-                    'subtotal'            => $taxResult->subtotalBeforeTax,
-                    'discount'            => $discount,
-                    'tax_rate'            => 0,        // deprecated column; kept for pre-tax-engine rows
-                    'tax_amount'          => $taxResult->totalTax,
-                    'total'               => $invoiceTotal,
-                    'prices_included_tax' => $taxResult->pricesIncludedTax,
-                    'tax_breakdown_json'  => $taxResult->toArray(),
-                    'wallet_amount'       => 0,
-                    'status'              => 'draft',
-                    'notes'               => $validated['notes'] ?? $order->notes,
-                    'private_notes'       => $validated['private_notes'] ?? $order->private_notes,
-                    'issued_at'           => now(),
+                    'order_id'       => $order->id,
+                    'branch_id'      => $order->branch_id,
+                    'customer_id'    => $customer?->id ?? $order->customer_id,
+                    'invoice_number' => Invoice::generateNumber(),
+                    'subtotal'       => $order->total_amount,
+                    'discount'       => $discount,
+                    'tax_rate'       => 0,
+                    'tax_amount'     => 0,
+                    'total'          => max(0, $order->total_amount - $discount),
+                    'wallet_amount'  => 0,
+                    'status'         => 'draft',
+                    'notes'          => $validated['notes'] ?? $order->notes,
+                    'private_notes'  => $validated['private_notes'] ?? $order->private_notes,
+                    'issued_at'      => now(),
                 ]);
-
                 $order->logEvent('invoice_created',
                     "تم إنشاء الفاتورة {$invoice->invoice_number}",
                     ['invoice_id' => $invoice->id]
@@ -257,7 +243,7 @@ class POSController extends Controller
             }
 
             // ── Payment entries (append — never delete) ────────────────────
-            if (! empty($validated['payments'])) {
+            if (!empty($validated['payments'])) {
                 foreach ($validated['payments'] as $payment) {
                     if ($payment['amount'] > 0) {
                         $invoice->paymentEntries()->create([

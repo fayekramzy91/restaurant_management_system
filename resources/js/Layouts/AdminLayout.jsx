@@ -3,14 +3,17 @@ import { useState } from 'react';
 import {
     LayoutDashboard, Store, Tag, Utensils, Map, LayoutGrid,
     ShoppingCart, Settings, LogOut, ChevronLeft, Users, UserCog, ShieldCheck,
+    BarChart2, ReceiptText,
 } from 'lucide-react';
 import { Avatar, AvatarFallback } from '@/Components/ui/avatar';
 import { Separator } from '@/Components/ui/separator';
 import { cn } from '@/lib/utils';
 
 const NAV_ITEMS = [
-    { name: 'لوحة التحكم',       icon: LayoutDashboard, route: 'admin.dashboard',      active: 'admin.dashboard',      permission: 'dashboard.view' },
-    { name: 'الطلبات',           icon: ShoppingCart,    route: 'admin.orders.index',    active: 'admin.orders.*',       permission: 'reports.view' },
+    { name: 'لوحة التحكم',       icon: LayoutDashboard, route: 'admin.dashboard',          active: 'admin.dashboard',      permission: 'dashboard.view' },
+    { name: 'التقارير',          icon: BarChart2,       route: 'admin.reports.dashboard',  active: 'admin.reports.*',      permission: 'reports.view' },
+    { name: 'الطلبات',           icon: ShoppingCart,    route: 'admin.orders.index',       active: 'admin.orders.*',       permission: 'reports.view' },
+    { name: 'الفواتير',          icon: ReceiptText,     route: 'admin.invoices.index',     active: 'admin.invoices.*',     permission: 'payments.view' },
     { name: 'العملاء',           icon: Users,           route: 'admin.customers.index', active: 'admin.customers.*',    permission: 'customers.view' },
     { name: 'الأفرع',            icon: Store,           route: 'admin.branches.index',  active: 'admin.branches.*',     permission: 'admin.branches' },
     { name: 'التصنيفات',         icon: Tag,             route: 'admin.categories.index',active: 'admin.categories.*',  permission: 'admin.categories' },
