@@ -51,11 +51,12 @@ class OrderController extends Controller
 
             $order->items()->create([
                 'menu_item_id' => $menuItem->id,
+                'name'         => $menuItem->name,
                 'quantity'     => $quantity,
                 'price'        => $menuItem->price,
             ]);
 
-            $order->increment('total_amount', $menuItem->price * $quantity);
+            $order->recalculateTotalAmount();
 
             $order->logEvent('item_added',
                 "تمت إضافة {$quantity}× {$menuItem->name}",
@@ -69,7 +70,7 @@ class OrderController extends Controller
     public function addItem(Request $request, Order $order)
     {
         $validated = $request->validate([
-            'menu_item_id' => 'required|exists:menu_items,id',
+            'menu_item_id' => 'required|exists:menu_items,id,deleted_at,NULL',
             'quantity'     => 'required|integer|min:1',
             'notes'        => 'nullable|string',
         ]);
@@ -86,13 +87,14 @@ class OrderController extends Controller
         } else {
             $order->items()->create([
                 'menu_item_id' => $menuItem->id,
+                'name'         => $menuItem->name,
                 'quantity'     => $validated['quantity'],
                 'price'        => $menuItem->price,
                 'notes'        => $validated['notes'] ?? null,
             ]);
         }
 
-        $order->increment('total_amount', $menuItem->price * $validated['quantity']);
+        $order->recalculateTotalAmount();
 
         $order->logEvent('item_added',
             "تمت إضافة {$validated['quantity']}× {$menuItem->name}",
@@ -106,19 +108,13 @@ class OrderController extends Controller
     {
         $validated = $request->validate([
             'addons'                  => 'nullable|array',
-            'addons.*.menu_item_id'  => 'required|exists:menu_items,id',
+            'addons.*.menu_item_id'  => 'required|exists:menu_items,id,deleted_at,NULL',
             'addons.*.quantity'      => 'required|integer|min:0',
         ]);
 
-        $oldAddonsTotal = 0;
-        foreach ($item->addons as $addon) {
-            $oldAddonsTotal += $addon->price * $addon->quantity;
-        }
+        $addonNames = [];
 
         $item->addons()->delete();
-
-        $newAddonsTotal = 0;
-        $addonNames     = [];
 
         if (isset($validated['addons'])) {
             foreach ($validated['addons'] as $addonData) {
@@ -126,21 +122,16 @@ class OrderController extends Controller
                     $menuItem = MenuItem::find($addonData['menu_item_id']);
                     $item->addons()->create([
                         'menu_item_id' => $menuItem->id,
+                        'name'         => $menuItem->name,
                         'price'        => $menuItem->price,
                         'quantity'     => $addonData['quantity'],
                     ]);
-                    $newAddonsTotal += $menuItem->price * $addonData['quantity'];
-                    $addonNames[]    = "{$addonData['quantity']}× {$menuItem->name}";
+                    $addonNames[] = "{$addonData['quantity']}× {$menuItem->name}";
                 }
             }
         }
 
-        $diff = $newAddonsTotal - $oldAddonsTotal;
-        if ($diff > 0) {
-            $order->increment('total_amount', $diff);
-        } elseif ($diff < 0) {
-            $order->decrement('total_amount', abs($diff));
-        }
+        $order->recalculateTotalAmount();
 
         $itemName = $item->menuItem?->name ?? 'صنف';
         $order->logEvent('addons_updated',
@@ -160,7 +151,6 @@ class OrderController extends Controller
 
         $oldQuantity = $item->quantity;
         $newQuantity = $validated['quantity'];
-        $diff        = $newQuantity - $oldQuantity;
         $itemName    = $item->menuItem?->name ?? 'صنف';
 
         $updateData = ['quantity' => $newQuantity];
@@ -170,14 +160,9 @@ class OrderController extends Controller
 
         $item->update($updateData);
 
-        $addonsPrice = $item->addons->sum('price');
-        if ($diff > 0) {
-            $order->increment('total_amount', ($item->price + $addonsPrice) * $diff);
-        } elseif ($diff < 0) {
-            $order->decrement('total_amount', ($item->price + $addonsPrice) * abs($diff));
-        }
+        $order->recalculateTotalAmount();
 
-        if ($diff !== 0) {
+        if ($newQuantity !== $oldQuantity) {
             $order->logEvent('item_updated',
                 "تم تعديل كمية {$itemName}: {$oldQuantity} ← {$newQuantity}",
                 ['item_name' => $itemName, 'old_quantity' => $oldQuantity, 'new_quantity' => $newQuantity]
@@ -194,15 +179,17 @@ class OrderController extends Controller
 
     public function removeItem(Order $order, OrderItem $item)
     {
-        $itemName    = $item->menuItem?->name ?? 'صنف';
-        $addonsPrice = $item->addons->sum('price');
+        $itemName = $item->menuItem?->name ?? 'صنف';
+        $qty      = $item->quantity;
+        $price    = $item->price;
 
-        $order->decrement('total_amount', ($item->price + $addonsPrice) * $item->quantity);
         $item->delete();
 
+        $order->recalculateTotalAmount();
+
         $order->logEvent('item_removed',
-            "تم حذف {$item->quantity}× {$itemName} من الطلب",
-            ['item_name' => $itemName, 'quantity' => $item->quantity, 'price' => $item->price]
+            "تم حذف {$qty}× {$itemName} من الطلب",
+            ['item_name' => $itemName, 'quantity' => $qty, 'price' => $price]
         );
 
         return redirect()->back()->with('success', 'item_removed');
@@ -215,5 +202,17 @@ class OrderController extends Controller
         $order->logEvent('sent_to_kitchen', 'تم إرسال الطلب إلى المطبخ');
 
         return redirect()->route('pos.index')->with('success', 'sent_to_kitchen');
+    }
+
+    public function freeTable(Order $order)
+    {
+        abort_if(!$order->table_id, 400);
+        abort_if(in_array($order->status, ['completed', 'cancelled']), 403);
+
+        Table::find($order->table_id)->update(['status' => 'billing']);
+
+        $order->logEvent('table_freed', 'تم تحرير الطاولة — الزبون في انتظار الدفع');
+
+        return back()->with('success', 'table_freed');
     }
 }

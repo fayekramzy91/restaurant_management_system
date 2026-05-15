@@ -7,9 +7,13 @@ use App\Http\Controllers\Admin\CustomerController as AdminCustomerController;
 use App\Http\Controllers\Admin\DashboardController;
 use App\Http\Controllers\Admin\MenuItemController;
 use App\Http\Controllers\Admin\OrderController as AdminOrderController;
+use App\Http\Controllers\Admin\InvoiceController;
 use App\Http\Controllers\Admin\PaymentMethodController;
+use App\Http\Controllers\Admin\ReportController;
+use App\Http\Controllers\Admin\RoleController;
 use App\Http\Controllers\Admin\SettingController;
 use App\Http\Controllers\Admin\TableController;
+use App\Http\Controllers\Admin\TaxRateController;
 use App\Http\Controllers\Admin\UserController;
 use App\Http\Controllers\Kitchen\KitchenController;
 use App\Http\Controllers\POS\CustomerController as POSCustomerController;
@@ -51,11 +55,23 @@ Route::middleware('auth')->prefix('admin')->name('admin.')->group(function () {
     Route::resource('menu-items', MenuItemController::class)
         ->middleware('permission:admin.categories');
 
+    Route::post('menu-items/{id}/restore', [MenuItemController::class, 'restore'])
+        ->middleware('permission:admin.categories')
+        ->name('menu-items.restore');
+
+    Route::delete('menu-items/{id}/force-destroy', [MenuItemController::class, 'forceDestroy'])
+        ->middleware('permission:admin.categories')
+        ->name('menu-items.force-destroy');
+
     Route::resource('areas', AreaController::class)
         ->middleware('permission:admin.areas');
 
     Route::resource('tables', TableController::class)
         ->middleware('permission:admin.tables');
+
+    Route::get('reports', [ReportController::class, 'dashboard'])
+        ->middleware('permission:reports.view')
+        ->name('reports.dashboard');
 
     Route::middleware('permission:reports.view')->group(function () {
         Route::get('orders', [AdminOrderController::class, 'index'])->name('orders.index');
@@ -64,9 +80,23 @@ Route::middleware('auth')->prefix('admin')->name('admin.')->group(function () {
         Route::post('orders/{order}/cancel', [AdminOrderController::class, 'cancel'])->name('orders.cancel');
     });
 
+    Route::middleware('permission:payments.view')->group(function () {
+        Route::get('invoices', [InvoiceController::class, 'index'])->name('invoices.index');
+        Route::get('invoices/{invoice}', [InvoiceController::class, 'show'])->name('invoices.show');
+    });
+
+    Route::post('invoices/{invoice}/refund', [InvoiceController::class, 'refund'])
+        ->middleware('permission:invoices.refund')
+        ->name('invoices.refund');
+
     Route::get('customers', [AdminCustomerController::class, 'index'])
         ->middleware('permission:customers.view')
         ->name('customers.index');
+
+    Route::middleware('permission:admin.roles')->group(function () {
+        Route::resource('roles', RoleController::class)->only(['index', 'store', 'update', 'destroy']);
+        Route::post('roles/{role}/permissions', [RoleController::class, 'syncPermissions'])->name('roles.permissions');
+    });
 
     Route::middleware('permission:admin.settings')->group(function () {
         Route::get('settings', [SettingController::class, 'index'])->name('settings.index');
@@ -75,6 +105,10 @@ Route::middleware('auth')->prefix('admin')->name('admin.')->group(function () {
         Route::put('payment-methods/{paymentMethod}', [PaymentMethodController::class, 'update'])->name('payment-methods.update');
         Route::delete('payment-methods/{paymentMethod}', [PaymentMethodController::class, 'destroy'])->name('payment-methods.destroy');
     });
+
+    Route::resource('taxes', TaxRateController::class)
+        ->middleware('permission:admin.taxes')
+        ->except(['show']);
 
     Route::middleware('permission:admin.users')->group(function () {
         Route::resource('users', UserController::class)->only(['index', 'store', 'update']);
@@ -155,6 +189,10 @@ Route::middleware('auth')->group(function () {
     Route::post('/orders/{order}/complete', [OrderController::class, 'complete'])
         ->middleware('permission:payments.process')
         ->name('orders.complete');
+
+    Route::post('/orders/{order}/free-table', [OrderController::class, 'freeTable'])
+        ->middleware('permission:orders.update')
+        ->name('orders.free-table');
 });
 
 // ── Profile ───────────────────────────────────────────────────────────────────
