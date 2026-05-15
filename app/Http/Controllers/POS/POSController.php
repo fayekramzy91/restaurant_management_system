@@ -7,23 +7,19 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 
+use App\Models\Area;
+use App\Models\Category;
 use App\Models\Customer;
 use App\Models\Invoice;
 use App\Models\InvoiceTax;
-use App\Models\Order;
-use App\Models\Table;
-use App\Models\Area;
-use App\Models\Category;
 use App\Models\MenuItem;
+use App\Models\Order;
 use App\Models\PaymentMethod;
 use App\Models\Setting;
 use App\Models\Table;
 use App\Models\WalletTransaction;
 use App\Services\InvoiceItemSnapshotter;
 use App\Services\Tax\TaxCalculator;
-use App\Models\WalletTransaction;
-use App\Services\InvoiceItemSnapshotter;
-use Illuminate\Support\Facades\DB;
 use Inertia\Inertia;
 
 class POSController extends Controller
@@ -143,8 +139,9 @@ class POSController extends Controller
             'private_notes'                => 'nullable|string',
         ]);
 
-        $discount  = (float) ($validated['discount'] ?? 0);
-        $totalPaid = 0;
+        $discount          = (float) ($validated['discount'] ?? 0);
+        $totalWithDiscount = max(0, $order->total_amount - $discount);
+        $totalPaid         = 0;
 
         DB::transaction(function () use ($order, $validated, $discount, $totalWithDiscount, &$totalPaid) {
             // ── Resolve / create customer ──────────────────────────────────
@@ -185,21 +182,38 @@ class POSController extends Controller
             $invoice = $order->invoice;
 
             if (!$invoice) {
+                // ── 1. Load items with tax configuration ───────────────────
+                $order->load(['items.taxRates', 'items.menuItem', 'items.addons.taxRates']);
+
+                // ── 2. Calculate taxes (pure, no DB writes) ────────────────
+                $settings  = Setting::getAllAsArray();
+                $taxResult = app(TaxCalculator::class)->calculateForCart(
+                    $order->items,
+                    $order->type,
+                    $settings,
+                );
+
+                // ── 3. Effective total after tax and discount ──────────────
+                $invoiceTotal = max(0.0, $taxResult->totalAfterTax - $discount);
+
+                // ── 4. Create the invoice using tax-aware totals ───────────
                 $invoice = Invoice::create([
-                    'order_id'       => $order->id,
-                    'branch_id'      => $order->branch_id,
-                    'customer_id'    => $customer?->id ?? $order->customer_id,
-                    'invoice_number' => Invoice::generateNumber(),
-                    'subtotal'       => $order->total_amount,
-                    'discount'       => $discount,
-                    'tax_rate'       => 0,
-                    'tax_amount'     => 0,
-                    'total'          => max(0, $order->total_amount - $discount),
-                    'wallet_amount'  => 0,
-                    'status'         => 'draft',
-                    'notes'          => $validated['notes'] ?? $order->notes,
-                    'private_notes'  => $validated['private_notes'] ?? $order->private_notes,
-                    'issued_at'      => now(),
+                    'order_id'            => $order->id,
+                    'branch_id'           => $order->branch_id,
+                    'customer_id'         => $customer?->id ?? $order->customer_id,
+                    'invoice_number'      => Invoice::generateNumber(),
+                    'subtotal'            => $taxResult->subtotalBeforeTax,
+                    'discount'            => $discount,
+                    'tax_rate'            => 0,
+                    'tax_amount'          => $taxResult->totalTax,
+                    'total'               => $invoiceTotal,
+                    'prices_included_tax' => $taxResult->pricesIncludedTax,
+                    'tax_breakdown_json'  => $taxResult->toArray(),
+                    'wallet_amount'       => 0,
+                    'status'              => 'draft',
+                    'notes'               => $validated['notes'] ?? $order->notes,
+                    'private_notes'       => $validated['private_notes'] ?? $order->private_notes,
+                    'issued_at'           => now(),
                 ]);
                 $order->logEvent('invoice_created',
                     "تم إنشاء الفاتورة {$invoice->invoice_number}",

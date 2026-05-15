@@ -15,6 +15,7 @@ use App\Http\Controllers\Admin\PaymentMethodController;
 use App\Http\Controllers\Admin\RoleController;
 use App\Http\Controllers\Admin\SettingController;
 use App\Http\Controllers\Admin\TableController;
+use App\Http\Controllers\Admin\TaxRateController;
 use App\Http\Controllers\Admin\UserController;
 use App\Http\Controllers\Kitchen\KitchenController;
 use App\Http\Controllers\POS\CustomerController as POSCustomerController;
@@ -114,6 +115,10 @@ Route::middleware('auth')->prefix('admin')->name('admin.')->group(function () {
         Route::put('payment-methods/{paymentMethod}', [PaymentMethodController::class, 'update'])->name('payment-methods.update');
         Route::delete('payment-methods/{paymentMethod}', [PaymentMethodController::class, 'destroy'])->name('payment-methods.destroy');
     });
+
+    Route::resource('taxes', TaxRateController::class)
+        ->middleware('permission:admin.taxes')
+        ->except(['show']);
 
     Route::middleware('permission:admin.users')->group(function () {
         Route::resource('users', UserController::class)->only(['index', 'store', 'update']);
