@@ -41,14 +41,37 @@ class Order extends Model
         return $this->hasMany(OrderItem::class);
     }
 
-    public function payments()
+    public function invoice()
     {
-        return $this->hasMany(OrderPayment::class);
+        return $this->hasOne(Invoice::class);
     }
 
     public function timeline()
     {
         return $this->hasMany(OrderTimeline::class)->orderBy('created_at');
+    }
+
+    public function getPaymentStatusAttribute(): string
+    {
+        return $this->invoice?->status ?? 'unpaid';
+    }
+
+    /**
+     * Recalculate total_amount from scratch by summing every item × qty
+     * plus each addon × its own absolute qty (addons are order-level totals,
+     * not per-parent-unit).  Always reloads items fresh from DB.
+     */
+    public function recalculateTotalAmount(): void
+    {
+        $total = 0;
+        foreach ($this->items()->with('addons')->get() as $item) {
+            $itemSubtotal   = $item->price * $item->quantity;
+            $addonsSubtotal = $item->addons->sum(
+                fn ($addon) => $addon->price * $addon->quantity
+            );
+            $total += $itemSubtotal + $addonsSubtotal;
+        }
+        $this->update(['total_amount' => $total]);
     }
 
     public function logEvent(string $event, string $description, array $metadata = []): void

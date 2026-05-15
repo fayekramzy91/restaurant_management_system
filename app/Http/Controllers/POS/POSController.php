@@ -7,12 +7,16 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 
 use App\Models\Order;
+use App\Models\Invoice;
 use App\Models\Table;
 use App\Models\Area;
 use App\Models\Category;
 use App\Models\MenuItem;
 use App\Models\Customer;
 use App\Models\PaymentMethod;
+use App\Models\WalletTransaction;
+use App\Services\InvoiceItemSnapshotter;
+use Illuminate\Support\Facades\DB;
 use Inertia\Inertia;
 
 class POSController extends Controller
@@ -34,14 +38,23 @@ class POSController extends Controller
 
     public function newTableOrder(Table $table)
     {
-        $activeOrder = $table->orders()->where('status', '!=', 'completed')->latest()->first();
+        $pendingOrder = $table->orders()->where('status', '!=', 'completed')->latest()->first();
+
+        // Billing table: treat as empty so waiter can create a new order for new guests.
+        // The billing order stays accessible via the orders queue.
+        $isBilling   = $table->status === 'billing';
+        $activeOrder = $isBilling ? null : $pendingOrder;
+        $billingOrder = $isBilling && $pendingOrder
+            ? ['id' => $pendingOrder->id, 'total_amount' => $pendingOrder->total_amount]
+            : null;
 
         return Inertia::render('POS/OrderManage', [
-            'table'       => $table->load('area'),
-            'activeOrder' => $activeOrder
+            'table'        => $table->load('area'),
+            'activeOrder'  => $activeOrder
                 ? $activeOrder->load('items.menuItem', 'items.addons.menuItem')
                 : null,
-            'categories' => Category::with(['menuItems' => function ($query) {
+            'billingOrder' => $billingOrder,
+            'categories'   => Category::with(['menuItems' => function ($query) {
                 $query->where('is_addon', false);
             }])->orderBy('sort_order')->get(),
             'addons' => MenuItem::where('is_addon', true)->where('status', 'available')->get(),
@@ -86,7 +99,10 @@ class POSController extends Controller
     public function checkout(Order $order)
     {
         return Inertia::render('POS/Checkout', [
-            'order'           => $order->load(['items.menuItem', 'items.addons.menuItem', 'table', 'customer', 'payments.paymentMethod']),
+            'order'           => $order->load([
+                'items.menuItem', 'items.addons.menuItem', 'table', 'customer',
+                'invoice.paymentEntries.paymentMethod',
+            ]),
             'payment_methods' => PaymentMethod::where('is_active', true)->get(),
         ]);
     }
@@ -95,6 +111,14 @@ class POSController extends Controller
 
     public function processPayment(Request $request, Order $order)
     {
+        // ── C1: Guard — block re-payment of a fully paid invoice ──────────
+        $existingInvoice = Invoice::where('order_id', $order->id)->first();
+        if ($existingInvoice && $existingInvoice->status === 'paid') {
+            return back()->withErrors([
+                'error' => 'هذا الطلب مدفوع بالفعل ولا يمكن معالجته مرة أخرى',
+            ]);
+        }
+
         $validated = $request->validate([
             'payments'                     => 'array',
             'payments.*.payment_method_id' => 'required|exists:payment_methods,id',
@@ -116,102 +140,184 @@ class POSController extends Controller
         $totalWithDiscount = max(0, $order->total_amount - $discount);
         $totalPaid         = 0;
 
-        // ── Resolve / create customer ──────────────────────────────────
-        $customer = null;
+        DB::transaction(function () use ($order, $validated, $discount, $totalWithDiscount, &$totalPaid) {
+            // ── Resolve / create customer ──────────────────────────────────
+            $customer = null;
 
-        if (!empty($validated['new_customer']['name'])) {
-            $customer = Customer::create($validated['new_customer']);
-            $order->logEvent('customer_linked',
-                "تم ربط عميل جديد: {$customer->name}",
-                ['customer_id' => $customer->id, 'name' => $customer->name]
-            );
-        } elseif (!empty($validated['customer_id'])) {
-            $customer = Customer::find($validated['customer_id']);
-        }
-
-        if ($customer) {
-            $order->update(['customer_id' => $customer->id]);
-        }
-
-        // ── Wallet deduction ───────────────────────────────────────────
-        $walletUsed = 0;
-        if ($customer && ($validated['wallet_amount'] ?? 0) > 0) {
-            $walletUsed = min($validated['wallet_amount'], $customer->wallet_balance);
-            if ($walletUsed > 0) {
-                $customer->decrement('wallet_balance', $walletUsed);
-                $order->logEvent('wallet_used',
-                    "تم استخدام {$walletUsed} من رصيد محفظة {$customer->name}",
-                    ['amount' => $walletUsed, 'customer' => $customer->name]
+            if (!empty($validated['new_customer']['name'])) {
+                $customer = Customer::create($validated['new_customer']);
+                $order->logEvent('customer_linked',
+                    "تم ربط عميل جديد: {$customer->name}",
+                    ['customer_id' => $customer->id, 'name' => $customer->name]
                 );
+            } elseif (!empty($validated['customer_id'])) {
+                $customer = Customer::find($validated['customer_id']);
             }
-        }
 
-        // ── Regular payments ───────────────────────────────────────────
-        $order->payments()->delete();
+            if ($customer) {
+                $order->update(['customer_id' => $customer->id]);
+            }
 
-        if (!empty($validated['payments'])) {
-            foreach ($validated['payments'] as $payment) {
-                if ($payment['amount'] > 0) {
-                    $order->payments()->create([
-                        'payment_method_id' => $payment['payment_method_id'],
-                        'amount'            => $payment['amount'],
-                    ]);
-                    $totalPaid  += $payment['amount'];
-                    $methodName  = PaymentMethod::find($payment['payment_method_id'])?->name ?? '—';
-                    $order->logEvent('payment_processed',
-                        "تم استلام {$payment['amount']} عبر {$methodName}",
-                        ['method' => $methodName, 'amount' => $payment['amount']]
+            // ── Wallet deduction ───────────────────────────────────────────
+            $walletUsed = 0;
+            if ($customer && ($validated['wallet_amount'] ?? 0) > 0) {
+                $walletUsed = min($validated['wallet_amount'], $customer->wallet_balance);
+                if ($walletUsed > 0) {
+                    $customer->decrement('wallet_balance', $walletUsed);
+                    $order->logEvent('wallet_used',
+                        "تم استخدام {$walletUsed} من رصيد محفظة {$customer->name}",
+                        ['amount' => $walletUsed, 'customer' => $customer->name]
                     );
                 }
             }
-        }
 
-        // ── Discount log ───────────────────────────────────────────────
-        if ($discount > 0) {
-            $order->logEvent('discount_applied',
-                "تم تطبيق خصم بقيمة {$discount}",
-                ['discount' => $discount]
+            // ── C2: Capture whether invoice existed before this call ───────
+            $invoiceAlreadyExisted = Invoice::where('order_id', $order->id)->exists();
+
+            // ── Invoice: get-or-create (append on partial re-checkout) ─────
+            $order->loadMissing('invoice');
+            $invoice = $order->invoice;
+
+            if (!$invoice) {
+                $invoice = Invoice::create([
+                    'order_id'       => $order->id,
+                    'branch_id'      => $order->branch_id,
+                    'customer_id'    => $customer?->id ?? $order->customer_id,
+                    'invoice_number' => Invoice::generateNumber(),
+                    'subtotal'       => $order->total_amount,
+                    'discount'       => $discount,
+                    'tax_rate'       => 0,
+                    'tax_amount'     => 0,
+                    'total'          => max(0, $order->total_amount - $discount),
+                    'wallet_amount'  => 0,
+                    'status'         => 'draft',
+                    'notes'          => $validated['notes'] ?? $order->notes,
+                    'private_notes'  => $validated['private_notes'] ?? $order->private_notes,
+                    'issued_at'      => now(),
+                ]);
+                $order->logEvent('invoice_created',
+                    "تم إنشاء الفاتورة {$invoice->invoice_number}",
+                    ['invoice_id' => $invoice->id]
+                );
+
+                // Snapshot order items into the immutable invoice_items ledger
+                app(InvoiceItemSnapshotter::class)->snapshot($invoice);
+            } else {
+                // Update discount/total if changed on re-checkout
+                $invoice->update([
+                    'discount'       => $discount,
+                    'total'          => max(0, $order->total_amount - $discount),
+                    'notes'          => $validated['notes'] ?? $invoice->notes,
+                    'private_notes'  => $validated['private_notes'] ?? $invoice->private_notes,
+                    'customer_id'    => $customer?->id ?? $invoice->customer_id,
+                ]);
+            }
+
+            // ── Increment checkout attempt counter ─────────────────────────
+            $invoice->increment('checkout_attempts');
+
+            // ── D: WalletTransaction debit ─────────────────────────────────
+            // Recorded here (after invoice exists) so reference_id is available.
+            if ($walletUsed > 0 && $customer) {
+                WalletTransaction::create([
+                    'customer_id'    => $customer->id,
+                    'type'           => 'debit',
+                    'amount'         => $walletUsed,
+                    'balance_after'  => $customer->fresh()->wallet_balance,
+                    'reason'         => 'payment_used',
+                    'reference_type' => Invoice::class,
+                    'reference_id'   => $invoice->id,
+                    'created_by'     => Auth::id(),
+                ]);
+                $customer->update(['wallet_last_updated_at' => now()]);
+            }
+
+            // ── Payment entries (append — never delete) ────────────────────
+            if (!empty($validated['payments'])) {
+                foreach ($validated['payments'] as $payment) {
+                    if ($payment['amount'] > 0) {
+                        $invoice->paymentEntries()->create([
+                            'payment_method_id' => $payment['payment_method_id'],
+                            'type'              => 'payment',
+                            'amount'            => $payment['amount'],
+                            'processed_by'      => Auth::id(),
+                        ]);
+                        $totalPaid  += $payment['amount'];
+                        $methodName  = PaymentMethod::find($payment['payment_method_id'])?->name ?? '—';
+                        $order->logEvent('payment_processed',
+                            "تم استلام {$payment['amount']} عبر {$methodName}",
+                            ['method' => $methodName, 'amount' => $payment['amount']]
+                        );
+                    }
+                }
+            }
+
+            // ── Wallet amount on invoice ───────────────────────────────────
+            // C2: Only increment on first checkout — prevents double-count on re-checkout.
+            if ($walletUsed > 0 && !$invoiceAlreadyExisted) {
+                $invoice->increment('wallet_amount', $walletUsed);
+                // recalculatePaidAmount is triggered by PaymentEntry creation above;
+                // if only wallet was used (no entries), recalculate manually.
+                if ($totalPaid === 0) {
+                    $invoice->refresh()->recalculatePaidAmount();
+                }
+            }
+
+            // ── Discount log ───────────────────────────────────────────────
+            if ($discount > 0) {
+                $order->logEvent('discount_applied',
+                    "تم تطبيق خصم بقيمة {$discount}",
+                    ['discount' => $discount]
+                );
+            }
+
+            // ── Surplus → wallet ───────────────────────────────────────────
+            $effectivePaid = $totalPaid + $walletUsed;
+            $surplus       = max(0, $effectivePaid - $totalWithDiscount);
+
+            if ($surplus > 0 && $customer && ($validated['credit_surplus'] ?? false)) {
+                $customer->increment('wallet_balance', $surplus);
+                // ── D: WalletTransaction credit ───────────────────────────
+                WalletTransaction::create([
+                    'customer_id'    => $customer->id,
+                    'type'           => 'credit',
+                    'amount'         => $surplus,
+                    'balance_after'  => $customer->fresh()->wallet_balance,
+                    'reason'         => 'payment_surplus',
+                    'reference_type' => Invoice::class,
+                    'reference_id'   => $invoice->id,
+                    'created_by'     => Auth::id(),
+                ]);
+                $customer->update(['wallet_last_updated_at' => now()]);
+                $order->logEvent('wallet_credited',
+                    "تمت إضافة {$surplus} لمحفظة {$customer->name}",
+                    ['amount' => $surplus, 'customer' => $customer->name]
+                );
+            }
+
+            // ── Update order (operational fields only) ─────────────────────
+            $order->update([
+                'status'        => 'completed',
+                'notes'         => $validated['notes'] ?? $order->notes,
+                'private_notes' => $validated['private_notes'] ?? $order->private_notes,
+            ]);
+
+            $invoice->refresh();
+            $order->logEvent('order_completed',
+                'تم إغلاق الطلب',
+                ['invoice_status' => $invoice->status, 'total_paid' => $effectivePaid]
             );
-        }
 
-        // ── Surplus → wallet ───────────────────────────────────────────
-        $effectivePaid = $totalPaid + $walletUsed;
-        $surplus       = max(0, $effectivePaid - $totalWithDiscount);
+            if ($order->table_id) {
+                Table::find($order->table_id)->update(['status' => 'available']);
+            }
+        });
 
-        if ($surplus > 0 && $customer && ($validated['credit_surplus'] ?? false)) {
-            $customer->increment('wallet_balance', $surplus);
-            $order->logEvent('wallet_credited',
-                "تمت إضافة {$surplus} لمحفظة {$customer->name}",
-                ['amount' => $surplus, 'customer' => $customer->name]
-            );
-        }
+        $invoiceNumber = $order->fresh()->invoice?->invoice_number;
 
-        // ── Payment status ─────────────────────────────────────────────
-        $paymentStatus = 'unpaid';
-        if ($effectivePaid >= $totalWithDiscount && $totalWithDiscount > 0) {
-            $paymentStatus = 'paid';
-        } elseif ($effectivePaid > 0) {
-            $paymentStatus = 'partially_paid';
-        }
-
-        $order->update([
-            'status'         => 'completed',
-            'payment_status' => $paymentStatus,
-            'paid_amount'    => $effectivePaid,
-            'discount'       => $discount,
-            'notes'          => $validated['notes'] ?? $order->notes,
-            'private_notes'  => $validated['private_notes'] ?? $order->private_notes,
+        return redirect()->route('pos.index')->with([
+            'success'        => 'payment_processed',
+            'invoice_number' => $invoiceNumber,
         ]);
-
-        $order->logEvent('order_completed',
-            'تم إغلاق الطلب',
-            ['payment_status' => $paymentStatus, 'total_paid' => $effectivePaid]
-        );
-
-        if ($order->table_id) {
-            Table::find($order->table_id)->update(['status' => 'available']);
-        }
-
-        return redirect()->route('pos.index')->with('success', 'payment_processed');
     }
 }

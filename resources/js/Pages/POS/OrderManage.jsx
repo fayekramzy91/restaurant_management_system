@@ -17,7 +17,7 @@ function TypeIcon({ type, size = 18 }) {
     return <MapPin size={size} className="text-green-600" />;
 }
 
-export default function OrderManage({ table, activeOrder, categories, addons }) {
+export default function OrderManage({ table, activeOrder, billingOrder, categories, addons }) {
     const { settings } = usePage().props;
     const currency = settings?.currency || 'SAR';
 
@@ -36,9 +36,21 @@ export default function OrderManage({ table, activeOrder, categories, addons }) 
     const [selectedAddonQuantities, setSelectedAddonQuantities] = useState({});
 
     const { post: sendToKitchen, processing: sending } = useForm();
+    const [freeingTable, setFreeingTable] = useState(false);
 
-    const orderType = activeOrder?.type ?? 'dine_in';
+    const orderType  = activeOrder?.type ?? 'dine_in';
     const hasItems   = (activeOrder?.items?.length ?? 0) > 0;
+    const canFreeTable = activeOrder && orderType === 'dine_in'
+        && !['completed', 'cancelled'].includes(activeOrder.status)
+        && table?.status !== 'billing';
+
+    const handleFreeTable = () => {
+        if (!activeOrder || freeingTable) return;
+        setFreeingTable(true);
+        router.post(route('orders.free-table', activeOrder.id), {}, {
+            onFinish: () => setFreeingTable(false),
+        });
+    };
 
     const filteredItems = useMemo(() => {
         const cat = categories.find(c => c.id === selectedCategory);
@@ -145,6 +157,22 @@ export default function OrderManage({ table, activeOrder, categories, addons }) 
                     </div>
                 )}
             </header>
+
+            {/* Billing order notice */}
+            {billingOrder && (
+                <div className="bg-amber-50 border-b border-amber-200 px-5 py-2.5 flex items-center justify-between gap-3">
+                    <div className="flex items-center gap-2 text-amber-800 text-sm font-bold">
+                        <CreditCard size={15} className="shrink-0 text-amber-600" />
+                        <span>طلب سابق بانتظار الدفع — <span className="font-black">#{billingOrder.id}</span> ({billingOrder.total_amount} {settings?.currency || 'SAR'})</span>
+                    </div>
+                    <Link
+                        href={route('pos.checkout', billingOrder.id)}
+                        className="shrink-0 bg-amber-600 text-white text-xs font-black px-3 py-1.5 rounded-xl hover:bg-amber-700 transition-colors"
+                    >
+                        محاسبة
+                    </Link>
+                </div>
+            )}
 
             <div className="flex-1 flex overflow-hidden">
                 {/* ─── Categories Sidebar ─── */}
@@ -311,6 +339,18 @@ export default function OrderManage({ table, activeOrder, categories, addons }) 
                                 </span>
                             )}
                         </div>
+
+                        {/* Free Table */}
+                        {canFreeTable && (
+                            <button
+                                onClick={handleFreeTable}
+                                disabled={freeingTable}
+                                className="w-full flex items-center justify-center gap-2 py-2.5 rounded-2xl font-black text-sm border-2 border-amber-300 text-amber-700 bg-amber-50 hover:bg-amber-100 transition-colors disabled:opacity-50"
+                            >
+                                <ArrowRight size={15} />
+                                {freeingTable ? 'جارٍ التحرير...' : 'تحرير الطاولة — الزبون عند الكاشير'}
+                            </button>
+                        )}
                     </div>
                 </aside>
             </div>
@@ -320,7 +360,7 @@ export default function OrderManage({ table, activeOrder, categories, addons }) 
                 <div className="p-6 text-right" dir="rtl">
                     <div className="flex justify-between items-center mb-5 border-b pb-4">
                         <h2 className="text-lg font-black text-gray-800">
-                            إضافات: {editingCartItem?.menu_item?.name}
+                            إضافات: {editingCartItem?.name ?? editingCartItem?.menu_item?.name}
                         </h2>
                         <button onClick={() => setIsAddonModalOpen(false)} className="p-2 hover:bg-gray-100 rounded-full text-gray-400">
                             <X size={18} />
@@ -502,6 +542,18 @@ export default function OrderManage({ table, activeOrder, categories, addons }) 
                                         </span>
                                     )}
                                 </div>
+
+                                {/* Free Table */}
+                                {canFreeTable && (
+                                    <button
+                                        onClick={handleFreeTable}
+                                        disabled={freeingTable}
+                                        className="w-full flex items-center justify-center gap-2 py-2.5 rounded-2xl font-black text-sm border-2 border-amber-300 text-amber-700 bg-amber-50 hover:bg-amber-100 transition-colors disabled:opacity-50"
+                                    >
+                                        <ArrowRight size={15} />
+                                        {freeingTable ? 'جارٍ التحرير...' : 'تحرير الطاولة — الزبون عند الكاشير'}
+                                    </button>
+                                )}
                             </div>
                         </motion.div>
                     </div>
@@ -522,7 +574,7 @@ function OrderItemRow({ item, order, currency, onAddon }) {
                 <div className="flex-1 min-w-0">
                     <div className="flex justify-between items-start">
                         <div className="flex items-center gap-1.5 min-w-0">
-                            <h5 className="text-sm font-black text-gray-800 truncate">{item.menu_item?.name}</h5>
+                            <h5 className="text-sm font-black text-gray-800 truncate">{item.name ?? item.menu_item?.name ?? '[صنف محذوف]'}</h5>
                             <button
                                 onClick={onAddon}
                                 className="p-1 text-purple-600 hover:bg-purple-50 rounded-lg transition-colors shrink-0"
@@ -571,7 +623,7 @@ function OrderItemRow({ item, order, currency, onAddon }) {
                                 <div key={rel.id} className="flex justify-between items-center text-[10px] text-purple-600 font-bold bg-purple-50 px-2 py-0.5 rounded-md">
                                     <div className="flex items-center gap-1">
                                         <span>{rel.quantity}x</span>
-                                        <span>{rel.menu_item?.name}</span>
+                                        <span>{rel.name ?? rel.menu_item?.name ?? '[إضافة محذوفة]'}</span>
                                     </div>
                                     <span className="font-sans">{(rel.price * rel.quantity).toFixed(2)}</span>
                                 </div>

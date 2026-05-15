@@ -1,7 +1,8 @@
 import AdminLayout from '@/Layouts/AdminLayout';
-import { Head, useForm } from '@inertiajs/react';
-import { Plus, Edit, Trash2, LayoutGrid, CheckCircle2, Users, Clock, MapPin, Circle, Square, RectangleHorizontal } from 'lucide-react';
-import { useState } from 'react';
+import { Head, useForm, router } from '@inertiajs/react';
+import { Plus, Edit, Trash2, LayoutGrid, CheckCircle2, Users, Clock, MapPin, Circle, Square, RectangleHorizontal, QrCode, Download, RefreshCw } from 'lucide-react';
+import { useState, useEffect, useRef } from 'react';
+import QRCode from 'qrcode';
 import { Button } from '@/Components/ui/button';
 import { Input } from '@/Components/ui/input';
 import { Label } from '@/Components/ui/label';
@@ -36,9 +37,88 @@ function Pill({ icon: Icon, label, cls }) {
 
 const selectCls = 'flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring';
 
+function QrModal({ table, open, onClose }) {
+    const canvasRef = useRef(null);
+    const [generating, setGenerating] = useState(false);
+
+    const qrUrl = table?.qr_token
+        ? `${window.location.origin}/menu/${table.qr_token}`
+        : null;
+
+    useEffect(() => {
+        if (!open || !qrUrl) return;
+        // Wait for canvas to be mounted
+        const timer = setTimeout(() => {
+            if (!canvasRef.current) return;
+            QRCode.toCanvas(canvasRef.current, qrUrl, {
+                width: 260,
+                margin: 2,
+                color: { dark: '#1c0a0b', light: '#ffffff' },
+            });
+        }, 50);
+        return () => clearTimeout(timer);
+    }, [open, qrUrl]);
+
+    const download = () => {
+        const canvas = canvasRef.current;
+        if (!canvas) return;
+        const link = document.createElement('a');
+        link.download = `table-${table?.name ?? 'qr'}.png`;
+        link.href = canvas.toDataURL('image/png');
+        link.click();
+    };
+
+    const generateToken = () => {
+        setGenerating(true);
+        router.post(route('admin.tables.generate-qr', table.id), {}, {
+            onFinish: () => { setGenerating(false); onClose(); },
+        });
+    };
+
+    return (
+        <Dialog open={open} onOpenChange={onClose}>
+            <DialogContent className="max-w-sm" dir="rtl">
+                <DialogHeader className="px-6 pt-6">
+                    <DialogTitle>رمز QR — طاولة {table?.name}</DialogTitle>
+                </DialogHeader>
+                <div className="px-6 pb-6 flex flex-col items-center gap-4">
+                    {qrUrl ? (
+                        <>
+                            <div className="p-3 bg-white rounded-2xl border border-slate-200 shadow-sm">
+                                <canvas ref={canvasRef} />
+                            </div>
+                            <p className="text-[10px] text-slate-400 text-center break-all font-sans leading-relaxed">
+                                {qrUrl}
+                            </p>
+                            <Button onClick={download} className="gap-2 w-full">
+                                <Download size={14} /> تحميل رمز QR (PNG)
+                            </Button>
+                        </>
+                    ) : (
+                        <>
+                            <div className="py-10 flex flex-col items-center gap-3 text-slate-300">
+                                <QrCode size={52} strokeWidth={1} />
+                                <p className="text-sm font-semibold text-slate-400">لم يتم إنشاء رمز QR بعد</p>
+                                <p className="text-[12px] text-slate-300 text-center">
+                                    بعد الإنشاء يمكن للعملاء مسح الرمز لعرض القائمة والطلب
+                                </p>
+                            </div>
+                            <Button onClick={generateToken} disabled={generating} className="gap-2 w-full">
+                                <RefreshCw size={14} className={generating ? 'animate-spin' : ''} />
+                                إنشاء رمز QR
+                            </Button>
+                        </>
+                    )}
+                </div>
+            </DialogContent>
+        </Dialog>
+    );
+}
+
 export default function Index({ tables, areas }) {
     const [open, setOpen] = useState(false);
     const [editing, setEditing] = useState(null);
+    const [qrTable, setQrTable] = useState(null);
 
     const { data, setData, post, put, delete: destroy, reset, errors, processing } = useForm({
         name: '', area_id: areas[0]?.id || '', status: 'available',
@@ -138,6 +218,17 @@ export default function Index({ tables, areas }) {
                                     </TableCell>
                                     <TableCell className="text-left">
                                         <div className="flex items-center gap-1 justify-end opacity-0 group-hover:opacity-100 transition-all">
+                                            <Button
+                                                variant="ghost" size="icon"
+                                                onClick={() => setQrTable(table)}
+                                                className={cn(
+                                                    'h-7 w-7 hover:bg-emerald-50',
+                                                    table.qr_token ? 'text-emerald-500 hover:text-emerald-700' : 'text-slate-300 hover:text-emerald-600'
+                                                )}
+                                                title={table.qr_token ? 'عرض رمز QR' : 'إنشاء رمز QR'}
+                                            >
+                                                <QrCode size={13} />
+                                            </Button>
                                             <Button variant="ghost" size="icon" onClick={() => openEdit(table)} className="h-7 w-7 text-slate-300 hover:text-blue-600 hover:bg-blue-50">
                                                 <Edit size={13} />
                                             </Button>
@@ -160,6 +251,8 @@ export default function Index({ tables, areas }) {
                     </TableBody>
                 </Table>
             </Card>
+
+            <QrModal table={qrTable} open={!!qrTable} onClose={() => setQrTable(null)} />
 
             <Dialog open={open} onOpenChange={setOpen}>
                 <DialogContent className="max-w-md" dir="rtl">
