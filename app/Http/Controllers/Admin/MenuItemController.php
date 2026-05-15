@@ -8,6 +8,7 @@ use Illuminate\Support\Facades\Storage;
 
 use App\Models\MenuItem;
 use App\Models\Category;
+use App\Models\TaxRate;
 use Inertia\Inertia;
 
 class MenuItemController extends Controller
@@ -15,9 +16,10 @@ class MenuItemController extends Controller
     public function index()
     {
         return Inertia::render('Admin/MenuItems/Index', [
-            'menuItems'  => MenuItem::with('category')->get(),
+            'menuItems'  => MenuItem::with('category', 'taxRates')->get(),
             'archived'   => MenuItem::with('category')->onlyTrashed()->get(),
             'categories' => Category::all(),
+            'taxRates'   => TaxRate::active()->ordered()->get(),
         ]);
     }
 
@@ -32,6 +34,9 @@ class MenuItemController extends Controller
             'is_addon'            => 'boolean',
             'preparing_duration'  => 'nullable|integer|min:1|max:300',
             'image'               => 'nullable|image|max:3072',
+            'is_tax_exempt'       => 'boolean',
+            'tax_rate_ids'        => 'nullable|array',
+            'tax_rate_ids.*'      => 'exists:tax_rates,id',
         ]);
 
         if ($request->hasFile('image')) {
@@ -39,7 +44,17 @@ class MenuItemController extends Controller
             $validated['image'] = Storage::url($path);
         }
 
-        MenuItem::create($validated);
+        $taxRateIds = $validated['tax_rate_ids'] ?? null;
+        unset($validated['tax_rate_ids']);
+
+        $menuItem = MenuItem::create($validated);
+
+        if ($taxRateIds !== null) {
+            $menuItem->taxRates()->sync($taxRateIds);
+        } else {
+            $defaultIds = TaxRate::where('is_default', true)->pluck('id')->toArray();
+            $menuItem->taxRates()->sync($defaultIds);
+        }
 
         return redirect()->back()->with('success', 'تمت إضافة الصنف بنجاح');
     }
@@ -55,10 +70,12 @@ class MenuItemController extends Controller
             'is_addon'            => 'boolean',
             'preparing_duration'  => 'nullable|integer|min:1|max:300',
             'image'               => 'nullable|image|max:3072',
+            'is_tax_exempt'       => 'boolean',
+            'tax_rate_ids'        => 'nullable|array',
+            'tax_rate_ids.*'      => 'exists:tax_rates,id',
         ]);
 
         if ($request->hasFile('image')) {
-            // Delete old image from storage
             if ($menuItem->image) {
                 $oldPath = str_replace('/storage/', '', $menuItem->image);
                 Storage::disk('public')->delete($oldPath);
@@ -69,7 +86,11 @@ class MenuItemController extends Controller
             unset($validated['image']); // keep existing
         }
 
+        $taxRateIds = $validated['tax_rate_ids'] ?? [];
+        unset($validated['tax_rate_ids']);
+
         $menuItem->update($validated);
+        $menuItem->taxRates()->sync($taxRateIds);
 
         return redirect()->back()->with('success', 'تم تحديث الصنف');
     }
