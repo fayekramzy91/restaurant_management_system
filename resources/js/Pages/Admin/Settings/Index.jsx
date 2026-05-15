@@ -1,7 +1,7 @@
 import AdminLayout from '@/Layouts/AdminLayout';
 import { Head, useForm, router } from '@inertiajs/react';
 import { useState, useEffect, useRef } from 'react';
-import { Store, Phone, MapPin, Clock, DollarSign, CreditCard, Plus, Trash2, Edit2, X, Check, Shield, CheckCircle2, AlertCircle, QrCode } from 'lucide-react';
+import { Store, Phone, MapPin, Clock, DollarSign, CreditCard, Plus, Trash2, Edit2, X, Check, Shield, CheckCircle2, AlertCircle, QrCode, Receipt } from 'lucide-react';
 import { Button } from '@/Components/ui/button';
 import { Input } from '@/Components/ui/input';
 import { Label } from '@/Components/ui/label';
@@ -18,6 +18,24 @@ function Field({ label, error, children, className = '' }) {
             <Label className="text-xs font-semibold text-slate-500 uppercase tracking-wide">{label}</Label>
             {children}
             {error && <p className="text-xs text-destructive mt-1">{error}</p>}
+        </div>
+    );
+}
+
+function ToggleRow({ label, helper, checked, onToggle }) {
+    return (
+        <div className="flex items-center justify-between gap-4 py-1">
+            <div className="flex-1">
+                <p className="text-sm font-semibold text-slate-700">{label}</p>
+                {helper && <p className="text-xs text-slate-400 mt-0.5">{helper}</p>}
+            </div>
+            <button
+                type="button"
+                onClick={onToggle}
+                className={`relative w-11 h-6 rounded-full transition-colors duration-200 shrink-0 ${checked ? 'bg-emerald-500' : 'bg-slate-200'}`}
+            >
+                <span className={`absolute top-0.5 w-5 h-5 bg-white rounded-full shadow transition-all duration-200 ${checked ? 'right-0.5' : 'left-0.5'}`} />
+            </button>
         </div>
     );
 }
@@ -46,6 +64,14 @@ export default function Index({ settings, payment_methods }) {
         phone:                         settings?.phone || '',
         address:                       settings?.address || '',
         customer_allow_add_after_submit: settings?.customer_allow_add_after_submit || '0',
+        tax: {
+            prices_include_tax:     settings?.['tax.prices_include_tax']     || '0',
+            compound_taxes_enabled: settings?.['tax.compound_taxes_enabled'] || '0',
+            exempt_takeaway:        settings?.['tax.exempt_takeaway']        || '0',
+            exempt_delivery:        settings?.['tax.exempt_delivery']        || '0',
+            rounding_mode:          settings?.['tax.rounding_mode']          || 'per_invoice',
+            display_breakdown:      settings?.['tax.display_breakdown']      || '0',
+        },
     });
 
     const [toast, setToast] = useState(null);
@@ -135,6 +161,81 @@ export default function Index({ settings, payment_methods }) {
                                 data.customer_allow_add_after_submit === '1' ? 'right-0.5' : 'left-0.5'
                             }`} />
                         </button>
+                    </div>
+                </SectionCard>
+
+                {/* Tax Settings */}
+                <SectionCard icon={Receipt} iconCls="bg-orange-50 text-orange-500" title="إعدادات الضرائب">
+                    <div className="space-y-4">
+                        <ToggleRow
+                            label="الأسعار شاملة الضريبة"
+                            checked={data.tax.prices_include_tax === '1'}
+                            onToggle={() => setData('tax.prices_include_tax', data.tax.prices_include_tax === '1' ? '0' : '1')}
+                        />
+                        <p className="text-xs text-amber-600 bg-amber-50 border border-amber-100 rounded-lg px-3 py-2">
+                            ⚠️ يؤثر على حساب الفواتير الجديدة فقط
+                        </p>
+
+                        <div className="border-t border-slate-100 pt-4">
+                            <ToggleRow
+                                label="تفعيل الضرائب المركبة"
+                                helper="الضريبة المركبة تُحسب فوق الضرائب الأخرى"
+                                checked={data.tax.compound_taxes_enabled === '1'}
+                                onToggle={() => setData('tax.compound_taxes_enabled', data.tax.compound_taxes_enabled === '1' ? '0' : '1')}
+                            />
+                        </div>
+
+                        <div className="border-t border-slate-100 pt-4">
+                            <ToggleRow
+                                label="إعفاء طلبات تيك أواي من الضرائب"
+                                checked={data.tax.exempt_takeaway === '1'}
+                                onToggle={() => setData('tax.exempt_takeaway', data.tax.exempt_takeaway === '1' ? '0' : '1')}
+                            />
+                        </div>
+
+                        <div className="border-t border-slate-100 pt-4">
+                            <ToggleRow
+                                label="إعفاء طلبات التوصيل من الضرائب"
+                                checked={data.tax.exempt_delivery === '1'}
+                                onToggle={() => setData('tax.exempt_delivery', data.tax.exempt_delivery === '1' ? '0' : '1')}
+                            />
+                        </div>
+
+                        <div className="border-t border-slate-100 pt-4 space-y-2">
+                            <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide">أسلوب التقريب</p>
+                            <div className="flex items-center gap-6">
+                                <label className="flex items-center gap-2 cursor-pointer">
+                                    <input
+                                        type="radio"
+                                        name="tax_rounding_mode"
+                                        value="per_line"
+                                        checked={data.tax.rounding_mode === 'per_line'}
+                                        onChange={() => setData('tax.rounding_mode', 'per_line')}
+                                        className="text-primary"
+                                    />
+                                    <span className="text-sm text-slate-700">لكل بند</span>
+                                </label>
+                                <label className="flex items-center gap-2 cursor-pointer">
+                                    <input
+                                        type="radio"
+                                        name="tax_rounding_mode"
+                                        value="per_invoice"
+                                        checked={data.tax.rounding_mode === 'per_invoice'}
+                                        onChange={() => setData('tax.rounding_mode', 'per_invoice')}
+                                        className="text-primary"
+                                    />
+                                    <span className="text-sm text-slate-700">للفاتورة الكاملة</span>
+                                </label>
+                            </div>
+                        </div>
+
+                        <div className="border-t border-slate-100 pt-4">
+                            <ToggleRow
+                                label="إظهار تفاصيل الضريبة في الفواتير"
+                                checked={data.tax.display_breakdown === '1'}
+                                onToggle={() => setData('tax.display_breakdown', data.tax.display_breakdown === '1' ? '0' : '1')}
+                            />
+                        </div>
                     </div>
                 </SectionCard>
 

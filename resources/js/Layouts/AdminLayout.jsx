@@ -112,6 +112,12 @@ export default function AdminLayout({ children, title }) {
                         <LogOut size={16} />
                         {!collapsed && 'تسجيل الخروج'}
                     </Link>
+
+                    {!collapsed && (
+                        <p className="mt-3 px-1 text-[10px] font-mono text-white/20 text-center select-none">
+                            v{__APP_VERSION__}
+                        </p>
+                    )}
                 </div>
 
                 {/* Collapse toggle */}
