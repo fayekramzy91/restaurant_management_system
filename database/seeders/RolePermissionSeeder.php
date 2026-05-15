@@ -23,8 +23,9 @@ class RolePermissionSeeder extends Seeder
             ['key' => 'orders.cancel', 'display_name' => 'إلغاء الطلبات'],
         ],
         'المدفوعات' => [
-            ['key' => 'payments.process', 'display_name' => 'معالجة المدفوعات'],
-            ['key' => 'payments.view',    'display_name' => 'عرض المدفوعات'],
+            ['key' => 'payments.process',  'display_name' => 'معالجة المدفوعات'],
+            ['key' => 'payments.view',     'display_name' => 'عرض المدفوعات'],
+            ['key' => 'invoices.refund',   'display_name' => 'إجراء الاستردادات'],
         ],
         'قائمة الطعام' => [
             ['key' => 'menu.view',   'display_name' => 'عرض قائمة الطعام'],
@@ -72,7 +73,7 @@ class RolePermissionSeeder extends Seeder
             'permissions'  => [
                 'dashboard.view',
                 'orders.view', 'orders.create', 'orders.update', 'orders.cancel',
-                'payments.process', 'payments.view',
+                'payments.process', 'payments.view', 'invoices.refund',
                 'customers.view', 'customers.create',
                 'menu.view',
             ],

@@ -3,7 +3,7 @@ import { useState, useMemo, useEffect, useRef } from 'react';
 import {
     ShoppingBag, Clock, User, RefreshCw, MapPin, Users,
     Plus, LayoutDashboard, ChevronDown, Truck, ShoppingCart,
-    Package, Edit3, CreditCard, X,
+    Package, Edit3, CreditCard, X, LogOut, Search, SlidersHorizontal,
 } from 'lucide-react';
 import Modal from '@/Components/Modal';
 
@@ -12,10 +12,11 @@ const ORDER_STATUS_LABELS = { pending: 'قيد الانتظار', preparing: 'ي
 const SHAPE_LABELS        = { rectangle: 'مستطيلة', square: 'مربعة', round: 'دائرية', oval: 'بيضاوية' };
 
 const STATUS_FILTERS = [
-    { key: 'all',       label: 'الكل',   dot: 'bg-gray-400' },
-    { key: 'available', label: 'متاحة',  dot: 'bg-green-500' },
-    { key: 'occupied',  label: 'مشغولة', dot: 'bg-red-500' },
-    { key: 'reserved',  label: 'محجوزة', dot: 'bg-yellow-400' },
+    { key: 'all',       label: 'الكل',              dot: 'bg-gray-400' },
+    { key: 'available', label: 'متاحة',             dot: 'bg-green-500' },
+    { key: 'occupied',  label: 'مشغولة',            dot: 'bg-red-500' },
+    { key: 'reserved',  label: 'محجوزة',            dot: 'bg-yellow-400' },
+    { key: 'billing',   label: 'بانتظار الدفع',     dot: 'bg-amber-500' },
 ];
 
 function statusColors(status) {
@@ -25,12 +26,18 @@ function statusColors(status) {
 }
 
 export default function Index({ areas, orders }) {
-    const { settings } = usePage().props;
+    const { settings, auth } = usePage().props;
     const currency = settings?.currency || 'SAR';
+    const permissions = auth.user?.permissions ?? [];
 
     const [activeTab, setActiveTab] = useState('tables');
     const [statusFilter, setStatusFilter] = useState('all');
     const [showNewOrderModal, setShowNewOrderModal] = useState(false);
+
+    // Orders tab filters
+    const [orderSearch, setOrderSearch]           = useState('');
+    const [orderStatusFilter, setOrderStatusFilter] = useState('all');
+    const [orderTypeFilter, setOrderTypeFilter]   = useState('all');
     const [creating, setCreating] = useState(false);
 
     /* ── Ready-order notifications ───────────────── */
@@ -90,10 +97,10 @@ export default function Index({ areas, orders }) {
         prevOrdersRef.current = orders;
     }, [orders]);
 
-    // Poll every 30 seconds to refresh orders
+    // Poll every 30 seconds to refresh orders and table statuses
     useEffect(() => {
         const id = setInterval(() => {
-            router.reload({ only: ['orders'] });
+            router.reload({ only: ['orders', 'areas'] });
         }, 30000);
         return () => clearInterval(id);
     }, []);
@@ -105,8 +112,25 @@ export default function Index({ areas, orders }) {
             available: all.filter(t => t.status === 'available').length,
             occupied:  all.filter(t => t.status === 'occupied').length,
             reserved:  all.filter(t => t.status === 'reserved').length,
+            billing:   all.filter(t => t.status === 'billing').length,
         };
     }, [areas]);
+
+    const filteredOrders = useMemo(() => {
+        const q = orderSearch.trim().toLowerCase();
+        return orders.filter(order => {
+            if (orderStatusFilter !== 'all' && order.status !== orderStatusFilter) return false;
+            if (orderTypeFilter   !== 'all' && order.type   !== orderTypeFilter)   return false;
+            if (q) {
+                const tableMatch = (order.table?.name ?? '').toLowerCase().includes(q);
+                const idMatch    = String(order.id).includes(q);
+                if (!tableMatch && !idMatch) return false;
+            }
+            return true;
+        });
+    }, [orders, orderSearch, orderStatusFilter, orderTypeFilter]);
+
+    const hasOrderFilters = orderSearch || orderStatusFilter !== 'all' || orderTypeFilter !== 'all';
 
     const createOrder = (type) => {
         setCreating(true);
@@ -120,21 +144,21 @@ export default function Index({ areas, orders }) {
             <Head title="نقطة البيع" />
 
             {/* Header */}
-            <header className="bg-white border-b px-6 py-4 flex justify-between items-center shadow-sm sticky top-0 z-50">
-                <div className="flex items-center gap-3">
-                    <div className="bg-[#6f272a] p-2 rounded-xl text-white">
-                        <ShoppingBag size={22} />
+            <header className="bg-white border-b px-4 sm:px-6 py-3 sm:py-4 flex justify-between items-center shadow-sm sticky top-0 z-50">
+                <div className="flex items-center gap-2 sm:gap-3 min-w-0">
+                    <div className="bg-[#6f272a] p-2 rounded-xl text-white shrink-0">
+                        <ShoppingBag size={20} />
                     </div>
-                    <h1 className="text-xl font-black text-gray-800">نقطة البيع</h1>
+                    <h1 className="text-base sm:text-xl font-black text-gray-800 truncate">نقطة البيع</h1>
                 </div>
 
-                <div className="flex items-center gap-3">
+                <div className="flex items-center gap-2 sm:gap-3 shrink-0">
                     <button
                         onClick={() => setShowNewOrderModal(true)}
-                        className="flex items-center gap-2 bg-[#ee1d23] text-white px-4 py-2 rounded-xl font-black text-sm hover:bg-[#6f272a] transition-colors shadow-sm"
+                        className="flex items-center gap-1 sm:gap-2 bg-[#ee1d23] text-white px-2.5 sm:px-4 py-2 rounded-xl font-black text-sm hover:bg-[#6f272a] transition-colors shadow-sm"
                     >
                         <Plus size={16} />
-                        طلب جديد
+                        <span className="hidden sm:inline">طلب جديد</span>
                         <ChevronDown size={14} />
                     </button>
 
@@ -146,18 +170,30 @@ export default function Index({ areas, orders }) {
                         <RefreshCw size={18} />
                     </button>
 
-                    <Link
-                        href={route('dashboard')}
-                        className="flex items-center gap-1 text-sm font-bold text-blue-600 hover:underline"
+                    {permissions.includes('dashboard.view') && (
+                        <Link
+                            href={route('dashboard')}
+                            className="flex items-center gap-1 text-sm font-bold text-blue-600 hover:underline"
+                            title="الإدارة"
+                        >
+                            <LayoutDashboard size={16} />
+                            <span className="hidden sm:inline">الإدارة</span>
+                        </Link>
+                    )}
+
+                    <button
+                        onClick={() => router.post(route('logout'))}
+                        className="flex items-center gap-1 sm:gap-2 border border-gray-200 hover:bg-gray-100 px-2 sm:px-3 py-2 rounded-xl text-gray-500 hover:text-gray-700 text-sm font-bold transition-colors"
+                        title="تسجيل الخروج"
                     >
-                        <LayoutDashboard size={16} />
-                        الإدارة
-                    </Link>
+                        <LogOut size={16} />
+                        <span className="hidden sm:inline">خروج</span>
+                    </button>
                 </div>
             </header>
 
             {/* Tab Navigation */}
-            <div className="bg-white border-b px-6 sticky top-[73px] z-40">
+            <div className="bg-white border-b px-4 sm:px-6 sticky top-[57px] sm:top-[73px] z-40">
                 <div className="flex">
                     <TabBtn
                         active={activeTab === 'tables'}
@@ -224,35 +260,57 @@ export default function Index({ areas, orders }) {
                                     <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 xl:grid-cols-8 gap-4">
                                         {visibleTables.map((table) => {
                                             const activeOrder = table.orders?.[0] ?? null;
+                                            const isBilling = table.status === 'billing';
+                                            const tableHref = route('pos.table', table.id);
+
+                                            const cardClass = {
+                                                available: 'bg-white border-green-100 hover:border-green-400 hover:shadow-md',
+                                                occupied:  'bg-red-50 border-red-200 hover:shadow-md',
+                                                reserved:  'bg-yellow-50 border-yellow-200 hover:shadow-md',
+                                                billing:   'bg-amber-50 border-amber-300 hover:shadow-md',
+                                            }[table.status] ?? 'bg-white border-gray-100';
+
+                                            const dotClass = {
+                                                available: 'bg-green-500',
+                                                occupied:  'bg-red-500 animate-pulse',
+                                                reserved:  'bg-yellow-400',
+                                                billing:   'bg-amber-500 animate-pulse',
+                                            }[table.status] ?? 'bg-gray-400';
+
+                                            const statusLabel = {
+                                                available: 'متاحة',
+                                                occupied:  'مشغولة',
+                                                reserved:  'محجوزة',
+                                                billing:   'بانتظار الدفع',
+                                            }[table.status] ?? table.status;
+
+                                            const statusTextClass = {
+                                                available: 'text-green-600',
+                                                occupied:  'text-red-600',
+                                                reserved:  'text-yellow-600',
+                                                billing:   'text-amber-600',
+                                            }[table.status] ?? 'text-gray-400';
+
                                             return (
                                                 <Link
                                                     key={table.id}
-                                                    href={route('pos.table', table.id)}
-                                                    className={`relative p-4 rounded-2xl border-2 transition-all active:scale-95 flex flex-col items-center justify-center gap-1 shadow-sm cursor-pointer
-                                                        ${table.status === 'available'
-                                                            ? 'bg-white border-green-100 hover:border-green-400 hover:shadow-md'
-                                                            : table.status === 'occupied'
-                                                                ? 'bg-red-50 border-red-200 hover:shadow-md'
-                                                                : 'bg-yellow-50 border-yellow-200 hover:shadow-md'
-                                                        }`}
+                                                    href={tableHref}
+                                                    className={`relative p-4 rounded-2xl border-2 transition-all active:scale-95 flex flex-col items-center justify-center gap-1 shadow-sm cursor-pointer ${cardClass}`}
                                                 >
                                                     {/* Icon */}
                                                     <div className={`p-2.5 rounded-full ${
-                                                        table.status === 'available' ? 'bg-green-50 text-green-600' : 'bg-white/60'
+                                                        table.status === 'available' ? 'bg-green-50 text-green-600' :
+                                                        table.status === 'billing'   ? 'bg-amber-50 text-amber-600' : 'bg-white/60'
                                                     }`}>
-                                                        <Users size={20} />
+                                                        {isBilling ? <CreditCard size={20} /> : <Users size={20} />}
                                                     </div>
 
                                                     {/* Table name */}
                                                     <span className="font-black text-base font-sans">{table.name}</span>
 
                                                     {/* Status label */}
-                                                    <span className={`text-[10px] font-bold uppercase tracking-wide ${
-                                                        table.status === 'available' ? 'text-green-600' :
-                                                        table.status === 'occupied'  ? 'text-red-600' : 'text-yellow-600'
-                                                    }`}>
-                                                        {table.status === 'available' ? 'متاحة' :
-                                                         table.status === 'occupied'  ? 'مشغولة' : 'محجوزة'}
+                                                    <span className={`text-[10px] font-bold tracking-wide ${statusTextClass}`}>
+                                                        {statusLabel}
                                                     </span>
 
                                                     {/* Capacity */}
@@ -275,16 +333,13 @@ export default function Index({ areas, orders }) {
 
                                                     {/* Active order */}
                                                     {activeOrder && (
-                                                        <span className="text-[10px] font-black text-[#ee1d23] font-sans mt-0.5">
+                                                        <span className={`text-[10px] font-black font-sans mt-0.5 ${isBilling ? 'text-amber-600' : 'text-[#ee1d23]'}`}>
                                                             #{activeOrder.id} · {activeOrder.total_amount} {currency}
                                                         </span>
                                                     )}
 
                                                     {/* Status dot */}
-                                                    <div className={`absolute top-2 left-2 w-2.5 h-2.5 rounded-full shadow-sm ${
-                                                        table.status === 'available' ? 'bg-green-500' :
-                                                        table.status === 'occupied'  ? 'bg-red-500 animate-pulse' : 'bg-yellow-400'
-                                                    }`} />
+                                                    <div className={`absolute top-2 left-2 w-2.5 h-2.5 rounded-full shadow-sm ${dotClass}`} />
                                                 </Link>
                                             );
                                         })}
@@ -313,8 +368,91 @@ export default function Index({ areas, orders }) {
 
                 {/* ───── Orders Queue Tab ───── */}
                 {activeTab === 'queue' && (
+                    <div>
+                        {/* Filter bar */}
+                        <div className="bg-white border border-gray-100 rounded-2xl p-4 mb-5 space-y-3 shadow-sm">
+                            {/* Search */}
+                            <div className="flex items-center gap-3">
+                                <div className="relative flex-1">
+                                    <Search size={15} className="absolute top-1/2 -translate-y-1/2 right-3 text-gray-400 pointer-events-none" />
+                                    <input
+                                        type="text"
+                                        value={orderSearch}
+                                        onChange={e => setOrderSearch(e.target.value)}
+                                        placeholder="بحث برقم الطاولة أو رقم الطلب..."
+                                        className="w-full pr-9 pl-3 py-2.5 rounded-xl border border-gray-200 text-sm font-bold text-gray-700 placeholder-gray-300 focus:outline-none focus:border-[#ee1d23] transition-colors"
+                                    />
+                                </div>
+                                {hasOrderFilters && (
+                                    <button
+                                        onClick={() => { setOrderSearch(''); setOrderStatusFilter('all'); setOrderTypeFilter('all'); }}
+                                        className="shrink-0 text-xs font-black text-[#ee1d23] border border-[#ee1d23]/30 bg-red-50 px-3 py-2.5 rounded-xl hover:bg-red-100 transition-colors"
+                                    >
+                                        مسح الفلاتر
+                                    </button>
+                                )}
+                            </div>
+
+                            {/* Status + type pills */}
+                            <div className="flex flex-wrap gap-2 items-center">
+                                <span className="flex items-center gap-1 text-[11px] font-black text-gray-400 ml-1 shrink-0">
+                                    <SlidersHorizontal size={12} />
+                                    الحالة:
+                                </span>
+                                {[
+                                    { key: 'all',       label: 'الكل',           dot: 'bg-gray-400' },
+                                    { key: 'pending',   label: 'انتظار',         dot: 'bg-gray-400' },
+                                    { key: 'preparing', label: 'يُحضر',          dot: 'bg-yellow-400' },
+                                    { key: 'ready',     label: 'جاهز',           dot: 'bg-green-500' },
+                                    { key: 'completed', label: 'مكتمل',          dot: 'bg-blue-400' },
+                                ].map(f => (
+                                    <button
+                                        key={f.key}
+                                        onClick={() => setOrderStatusFilter(f.key)}
+                                        className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl font-black text-xs transition-all border ${
+                                            orderStatusFilter === f.key
+                                                ? 'border-[#ee1d23] bg-red-50 text-[#ee1d23]'
+                                                : 'border-gray-100 bg-gray-50 text-gray-400 hover:border-gray-200 hover:text-gray-600'
+                                        }`}
+                                    >
+                                        <span className={`w-1.5 h-1.5 rounded-full ${f.dot}`} />
+                                        {f.label}
+                                    </button>
+                                ))}
+
+                                <span className="w-px h-4 bg-gray-200 mx-1 shrink-0" />
+
+                                <span className="text-[11px] font-black text-gray-400 shrink-0">النوع:</span>
+                                {[
+                                    { key: 'all',      label: 'الكل',   icon: null },
+                                    { key: 'dine_in',  label: 'داخلي',  icon: <Users size={11} /> },
+                                    { key: 'takeaway', label: 'خارجي',  icon: <Package size={11} /> },
+                                    { key: 'delivery', label: 'توصيل',  icon: <Truck size={11} /> },
+                                ].map(f => (
+                                    <button
+                                        key={f.key}
+                                        onClick={() => setOrderTypeFilter(f.key)}
+                                        className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl font-black text-xs transition-all border ${
+                                            orderTypeFilter === f.key
+                                                ? 'border-[#ee1d23] bg-red-50 text-[#ee1d23]'
+                                                : 'border-gray-100 bg-gray-50 text-gray-400 hover:border-gray-200 hover:text-gray-600'
+                                        }`}
+                                    >
+                                        {f.icon}
+                                        {f.label}
+                                    </button>
+                                ))}
+
+                                {hasOrderFilters && (
+                                    <span className="mr-auto text-[11px] font-black text-gray-400 font-sans">
+                                        {filteredOrders.length} / {orders.length}
+                                    </span>
+                                )}
+                            </div>
+                        </div>
+
                     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-5">
-                        {orders.map((order) => (
+                        {filteredOrders.map((order) => (
                             <div
                                 key={order.id}
                                 className="bg-white rounded-3xl shadow-sm border border-gray-100 p-5 flex flex-col justify-between hover:shadow-xl transition-all group relative overflow-hidden"
@@ -388,6 +526,16 @@ export default function Index({ areas, orders }) {
                                 />
                             </div>
                         )}
+                        {orders.length > 0 && filteredOrders.length === 0 && (
+                            <div className="col-span-full">
+                                <EmptyState
+                                    icon={<Search size={56} className="opacity-20" />}
+                                    title="لا توجد نتائج مطابقة"
+                                    subtitle="جرّب تعديل الفلاتر أو مسحها"
+                                />
+                            </div>
+                        )}
+                    </div>
                     </div>
                 )}
             </main>
