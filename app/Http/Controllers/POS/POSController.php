@@ -5,15 +5,22 @@ namespace App\Http\Controllers\POS;
 use App\Http\Controllers\Controller;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\DB;
 
-use App\Models\Order;
+use App\Models\Customer;
 use App\Models\Invoice;
+use App\Models\InvoiceTax;
+use App\Models\Order;
 use App\Models\Table;
 use App\Models\Area;
 use App\Models\Category;
 use App\Models\MenuItem;
-use App\Models\Customer;
 use App\Models\PaymentMethod;
+use App\Models\Setting;
+use App\Models\Table;
+use App\Models\WalletTransaction;
+use App\Services\InvoiceItemSnapshotter;
+use App\Services\Tax\TaxCalculator;
 use App\Models\WalletTransaction;
 use App\Services\InvoiceItemSnapshotter;
 use Illuminate\Support\Facades\DB;
@@ -42,8 +49,8 @@ class POSController extends Controller
 
         // Billing table: treat as empty so waiter can create a new order for new guests.
         // The billing order stays accessible via the orders queue.
-        $isBilling   = $table->status === 'billing';
-        $activeOrder = $isBilling ? null : $pendingOrder;
+        $isBilling    = $table->status === 'billing';
+        $activeOrder  = $isBilling ? null : $pendingOrder;
         $billingOrder = $isBilling && $pendingOrder
             ? ['id' => $pendingOrder->id, 'total_amount' => $pendingOrder->total_amount]
             : null;
@@ -99,7 +106,7 @@ class POSController extends Controller
     public function checkout(Order $order)
     {
         return Inertia::render('POS/Checkout', [
-            'order'           => $order->load([
+            'order' => $order->load([
                 'items.menuItem', 'items.addons.menuItem', 'table', 'customer',
                 'invoice.paymentEntries.paymentMethod',
             ]),
@@ -107,7 +114,7 @@ class POSController extends Controller
         ]);
     }
 
-
+    // ─────────────────────────────────────────────────────────────────────────
 
     public function processPayment(Request $request, Order $order)
     {
@@ -136,9 +143,8 @@ class POSController extends Controller
             'private_notes'                => 'nullable|string',
         ]);
 
-        $discount          = $validated['discount'] ?? 0;
-        $totalWithDiscount = max(0, $order->total_amount - $discount);
-        $totalPaid         = 0;
+        $discount  = (float) ($validated['discount'] ?? 0);
+        $totalPaid = 0;
 
         DB::transaction(function () use ($order, $validated, $discount, $totalWithDiscount, &$totalPaid) {
             // ── Resolve / create customer ──────────────────────────────────
@@ -200,13 +206,18 @@ class POSController extends Controller
                     ['invoice_id' => $invoice->id]
                 );
 
-                // Snapshot order items into the immutable invoice_items ledger
-                app(InvoiceItemSnapshotter::class)->snapshot($invoice);
+                // ── 5. Snapshot items with tax breakdown data ──────────────
+                app(InvoiceItemSnapshotter::class)->snapshot($invoice, $taxResult);
+
+                // ── 6. Invoice-level tax summary rows ─────────────────────
+                foreach ($taxResult->toInvoiceTaxesData() as $taxData) {
+                    InvoiceTax::create(array_merge($taxData, ['invoice_id' => $invoice->id]));
+                }
             } else {
-                // Update discount/total if changed on re-checkout
+                // Re-checkout: update discount/total only (no tax recalculation)
                 $invoice->update([
                     'discount'       => $discount,
-                    'total'          => max(0, $order->total_amount - $discount),
+                    'total'          => max(0, (float) $invoice->subtotal + (float) $invoice->tax_amount - $discount),
                     'notes'          => $validated['notes'] ?? $invoice->notes,
                     'private_notes'  => $validated['private_notes'] ?? $invoice->private_notes,
                     'customer_id'    => $customer?->id ?? $invoice->customer_id,
@@ -216,8 +227,7 @@ class POSController extends Controller
             // ── Increment checkout attempt counter ─────────────────────────
             $invoice->increment('checkout_attempts');
 
-            // ── D: WalletTransaction debit ─────────────────────────────────
-            // Recorded here (after invoice exists) so reference_id is available.
+            // ── WalletTransaction debit (needs invoice_id as reference) ────
             if ($walletUsed > 0 && $customer) {
                 WalletTransaction::create([
                     'customer_id'    => $customer->id,
@@ -242,7 +252,7 @@ class POSController extends Controller
                             'amount'            => $payment['amount'],
                             'processed_by'      => Auth::id(),
                         ]);
-                        $totalPaid  += $payment['amount'];
+                        $totalPaid  += (float) $payment['amount'];
                         $methodName  = PaymentMethod::find($payment['payment_method_id'])?->name ?? '—';
                         $order->logEvent('payment_processed',
                             "تم استلام {$payment['amount']} عبر {$methodName}",
@@ -254,10 +264,8 @@ class POSController extends Controller
 
             // ── Wallet amount on invoice ───────────────────────────────────
             // C2: Only increment on first checkout — prevents double-count on re-checkout.
-            if ($walletUsed > 0 && !$invoiceAlreadyExisted) {
+            if ($walletUsed > 0 && ! $invoiceAlreadyExisted) {
                 $invoice->increment('wallet_amount', $walletUsed);
-                // recalculatePaidAmount is triggered by PaymentEntry creation above;
-                // if only wallet was used (no entries), recalculate manually.
                 if ($totalPaid === 0) {
                     $invoice->refresh()->recalculatePaidAmount();
                 }
@@ -272,12 +280,12 @@ class POSController extends Controller
             }
 
             // ── Surplus → wallet ───────────────────────────────────────────
+            $invoiceTotal  = (float) $invoice->fresh()->total;
             $effectivePaid = $totalPaid + $walletUsed;
-            $surplus       = max(0, $effectivePaid - $totalWithDiscount);
+            $surplus       = max(0.0, $effectivePaid - $invoiceTotal);
 
             if ($surplus > 0 && $customer && ($validated['credit_surplus'] ?? false)) {
                 $customer->increment('wallet_balance', $surplus);
-                // ── D: WalletTransaction credit ───────────────────────────
                 WalletTransaction::create([
                     'customer_id'    => $customer->id,
                     'type'           => 'credit',
@@ -295,7 +303,7 @@ class POSController extends Controller
                 );
             }
 
-            // ── Update order (operational fields only) ─────────────────────
+            // ── Update order (operational fields only — NOT financial) ─────
             $order->update([
                 'status'        => 'completed',
                 'notes'         => $validated['notes'] ?? $order->notes,
@@ -318,6 +326,46 @@ class POSController extends Controller
         return redirect()->route('pos.index')->with([
             'success'        => 'payment_processed',
             'invoice_number' => $invoiceNumber,
+        ]);
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+
+    /**
+     * Live tax preview for the Checkout screen — read-only, no DB writes.
+     *
+     * POST /pos/calculate-tax-preview
+     * Body: { order_id: int, discount: float }
+     * Returns JSON: { subtotal, tax_breakdown, total_tax, total }
+     */
+    public function calculateTaxPreview(Request $request)
+    {
+        $validated = $request->validate([
+            'order_id' => 'required|integer|exists:orders,id',
+            'discount' => 'nullable|numeric|min:0',
+        ]);
+
+        $order    = Order::with(['items.taxRates', 'items.menuItem'])->findOrFail($validated['order_id']);
+        $discount = (float) ($validated['discount'] ?? 0);
+        $settings = Setting::getAllAsArray();
+
+        $taxResult = app(TaxCalculator::class)->calculateForCart(
+            $order->items,
+            $order->type,
+            $settings,
+        );
+
+        $taxBreakdown = $taxResult->invoiceTaxes->values()->map(fn (array $t) => [
+            'name'   => $t['tax_name'],
+            'rate'   => $t['rate'],
+            'amount' => $t['tax_amount'],
+        ])->all();
+
+        return response()->json([
+            'subtotal'      => $taxResult->subtotalBeforeTax,
+            'tax_breakdown' => $taxBreakdown,
+            'total_tax'     => $taxResult->totalTax,
+            'total'         => max(0.0, $taxResult->totalAfterTax - $discount),
         ]);
     }
 }
