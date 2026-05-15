@@ -108,9 +108,10 @@ export default function Show({ order }) {
         }
     };
 
-    const discount           = Number(order.discount ?? 0);
+    const discount           = Number(order.discount ?? order.invoice?.discount ?? 0);
     const totalAfterDiscount = Math.max(0, Number(order.total_amount) - discount);
-    const totalPaid          = order.payments?.reduce((s, p) => s + Number(p.amount), 0) ?? 0;
+    const payments           = order.invoice?.payment_entries ?? [];
+    const totalPaid          = payments.reduce((s, p) => s + Number(p.amount), 0);
     const balance            = totalAfterDiscount - totalPaid;
 
     return (
@@ -256,10 +257,10 @@ export default function Show({ order }) {
                                 <span className="font-sans">{totalAfterDiscount.toFixed(2)} {currency}</span>
                                 <span>الإجمالي</span>
                             </div>
-                            {order.payments?.length > 0 && (
+                            {payments.length > 0 && (
                                 <>
                                     <div className="pt-2 space-y-1.5">
-                                        {order.payments.map(p => (
+                                        {payments.map(p => (
                                             <div key={p.id} className="flex justify-between text-slate-400 font-semibold text-xs">
                                                 <span className="font-sans">{Number(p.amount).toFixed(2)} {currency}</span>
                                                 <span>{p.payment_method?.name}</span>

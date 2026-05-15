@@ -17,7 +17,7 @@ class OrderController extends Controller
             'table',
             'customer',
             'items.menuItem',
-            'payments.paymentMethod',
+            'invoice',
         ]);
 
         if ($search = $request->get('search')) {
@@ -56,7 +56,7 @@ class OrderController extends Controller
             'customer',
             'items.menuItem',
             'items.addons.menuItem',
-            'payments.paymentMethod',
+            'invoice.paymentEntries.paymentMethod',
             'timeline.user',
         ]);
 

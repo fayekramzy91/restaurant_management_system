@@ -1,7 +1,7 @@
 import AdminLayout from '@/Layouts/AdminLayout';
 import { Head, useForm, router } from '@inertiajs/react';
 import { useState } from 'react';
-import { Store, Phone, MapPin, Clock, DollarSign, CreditCard, Plus, Trash2, Edit2, X, Check, Shield } from 'lucide-react';
+import { Store, Phone, MapPin, Clock, DollarSign, CreditCard, Plus, Trash2, Edit2, X, Check, Shield, Percent, AlertTriangle } from 'lucide-react';
 import { Button } from '@/Components/ui/button';
 import { Input } from '@/Components/ui/input';
 import { Label } from '@/Components/ui/label';
@@ -30,6 +30,31 @@ function Field({ label, error, children, className = '' }) {
     );
 }
 
+/** Reusable toggle row for the tax settings card */
+function TaxToggleRow({ checked, onChange, label, helper }) {
+    return (
+        <div className="flex items-start justify-between gap-4">
+            <div className="min-w-0">
+                <p className="text-sm font-semibold text-slate-700">{label}</p>
+                {helper && (
+                    typeof helper === 'string'
+                        ? <p className="text-xs text-slate-400 mt-0.5">{helper}</p>
+                        : <p className="text-xs mt-0.5">{helper}</p>
+                )}
+            </div>
+            <button
+                type="button"
+                role="switch"
+                aria-checked={checked}
+                onClick={() => onChange(!checked)}
+                className={`relative w-9 h-5 rounded-full transition-colors shrink-0 focus-visible:ring-2 focus-visible:ring-ring ${checked ? 'bg-primary' : 'bg-slate-200'}`}
+            >
+                <span className={`absolute top-0.5 w-4 h-4 bg-white rounded-full shadow-sm transition-transform ${checked ? 'translate-x-[-1.25rem]' : 'translate-x-[-0.25rem]'}`} />
+            </button>
+        </div>
+    );
+}
+
 function SectionCard({ icon: Icon, iconCls, title, children }) {
     return (
         <Card className="shadow-sm border-slate-200/80 overflow-hidden">
@@ -47,12 +72,26 @@ function SectionCard({ icon: Icon, iconCls, title, children }) {
 }
 
 export default function Index({ settings, payment_methods }) {
+    // Helper: setting values come back as strings ("1"/"0") — convert to boolean
+    const taxBool = (key) => {
+        const v = settings?.['tax.' + key];
+        return v === '1' || v === 'true' || v === true || v === 1;
+    };
+
     const { data, setData, post, processing, errors } = useForm({
         restaurant_name: settings?.restaurant_name || '',
         currency:        settings?.currency || 'SAR',
         working_hours:   settings?.working_hours || '',
         phone:           settings?.phone || '',
         address:         settings?.address || '',
+        tax: {
+            prices_include_tax:     taxBool('prices_include_tax'),
+            compound_taxes_enabled: taxBool('compound_taxes_enabled'),
+            exempt_takeaway:        taxBool('exempt_takeaway'),
+            exempt_delivery:        taxBool('exempt_delivery'),
+            rounding_mode:          settings?.['tax.rounding_mode'] || 'per_line',
+            display_breakdown:      taxBool('display_breakdown'),
+        },
     });
 
     const submit = (e) => { e.preventDefault(); post(route('admin.settings.update')); };
@@ -107,6 +146,79 @@ export default function Index({ settings, payment_methods }) {
                             placeholder="السبت - الخميس: 8:00 ص - 12:00 م"
                         />
                     </Field>
+                </SectionCard>
+
+                {/* ── Tax Settings ───────────────────────────────────── */}
+                <SectionCard icon={Percent} iconCls="bg-red-50 text-red-500" title="إعدادات الضرائب">
+                    <div className="space-y-5">
+
+                        {/* Prices include tax */}
+                        <TaxToggleRow
+                            checked={data.tax.prices_include_tax}
+                            onChange={v => setData('tax', { ...data.tax, prices_include_tax: v })}
+                            label="الأسعار شاملة الضريبة"
+                            helper={
+                                <span className="flex items-center gap-1 text-amber-600">
+                                    <AlertTriangle size={11} className="shrink-0" />
+                                    تغيير هذا الإعداد يؤثر على حساب الفواتير الجديدة فقط
+                                </span>
+                            }
+                        />
+
+                        {/* Compound taxes */}
+                        <TaxToggleRow
+                            checked={data.tax.compound_taxes_enabled}
+                            onChange={v => setData('tax', { ...data.tax, compound_taxes_enabled: v })}
+                            label="تفعيل الضرائب المركبة"
+                            helper="الضريبة المركبة تُحسب فوق الضرائب الأخرى"
+                        />
+
+                        {/* Exempt takeaway */}
+                        <TaxToggleRow
+                            checked={data.tax.exempt_takeaway}
+                            onChange={v => setData('tax', { ...data.tax, exempt_takeaway: v })}
+                            label="إعفاء طلبات تيك أواي من الضرائب"
+                        />
+
+                        {/* Exempt delivery */}
+                        <TaxToggleRow
+                            checked={data.tax.exempt_delivery}
+                            onChange={v => setData('tax', { ...data.tax, exempt_delivery: v })}
+                            label="إعفاء طلبات التوصيل من الضرائب"
+                        />
+
+                        {/* Rounding mode */}
+                        <div className="space-y-2">
+                            <Label className="text-xs font-semibold text-slate-500 uppercase tracking-wide">
+                                أسلوب التقريب
+                            </Label>
+                            <div className="flex items-center gap-4">
+                                {[
+                                    { value: 'per_line',    label: 'لكل بند' },
+                                    { value: 'per_invoice', label: 'للفاتورة الكاملة' },
+                                ].map(opt => (
+                                    <label key={opt.value} className="flex items-center gap-2 cursor-pointer">
+                                        <input
+                                            type="radio"
+                                            name="rounding_mode"
+                                            value={opt.value}
+                                            checked={data.tax.rounding_mode === opt.value}
+                                            onChange={() => setData('tax', { ...data.tax, rounding_mode: opt.value })}
+                                            className="text-primary border-input"
+                                        />
+                                        <span className="text-sm text-slate-700">{opt.label}</span>
+                                    </label>
+                                ))}
+                            </div>
+                        </div>
+
+                        {/* Display breakdown on invoices */}
+                        <TaxToggleRow
+                            checked={data.tax.display_breakdown}
+                            onChange={v => setData('tax', { ...data.tax, display_breakdown: v })}
+                            label="إظهار تفاصيل الضريبة في الفواتير"
+                        />
+                    </div>
                 </SectionCard>
 
                 <div className="flex justify-end">

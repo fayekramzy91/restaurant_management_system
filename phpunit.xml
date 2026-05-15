@@ -18,7 +18,14 @@
         </include>
     </source>
     <php>
+        <!-- Pin the application root to this worktree so Application::inferBasePath()
+             does not follow the vendor/ symlink to the parent repo. Without this,
+             Laravel 13 would load the main repo's routes/config instead of ours. -->
+        <server name="APP_BASE_PATH" value="/Applications/MAMP/htdocs/restaurant_management_system/.claude/worktrees/pedantic-joliot-2aab98"/>
         <env name="APP_ENV" value="testing"/>
+        <env name="APP_KEY" value="base64:qX4JBUxNuatW7iCl9D/kpMBQWt8TlIQcJSTfjHL/Yr0="/>
+        <!-- Vite manifest is not present in tests; suppress the file_get_contents warning -->
+        <env name="VITE_MANIFEST_FILE" value="false"/>
         <env name="APP_MAINTENANCE_DRIVER" value="file"/>
         <env name="BCRYPT_ROUNDS" value="4"/>
         <env name="BROADCAST_CONNECTION" value="null"/>

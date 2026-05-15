@@ -104,15 +104,44 @@ export default function Checkout({ order, payment_methods }) {
         }
     };
 
+    /* ── Tax preview ── */
+    const [taxPreview,     setTaxPreview]     = useState(null);
+    const taxTimerRef    = useRef(null);
+    const isFirstTaxLoad = useRef(true);
+    const displayTaxBreakdown = settings?.['tax.display_breakdown'] === '1' || settings?.['tax.display_breakdown'] === true;
+
+    useEffect(() => {
+        const delay = isFirstTaxLoad.current ? 0 : 500;
+        isFirstTaxLoad.current = false;
+        if (taxTimerRef.current) clearTimeout(taxTimerRef.current);
+        taxTimerRef.current = setTimeout(async () => {
+            try {
+                const res = await fetch('/pos/calculate-tax-preview', {
+                    method:  'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-XSRF-TOKEN': csrfToken(),
+                        'Accept':       'application/json',
+                    },
+                    body: JSON.stringify({ order_id: order.id, discount }),
+                });
+                if (res.ok) setTaxPreview(await res.json());
+            } catch { /* silently fall back to order.total_amount */ }
+        }, delay);
+        return () => { if (taxTimerRef.current) clearTimeout(taxTimerRef.current); };
+    }, [discount]);
+
     /* ── Payment calculations ── */
     const handlePaymentChange = (id, value) =>
         setPayments(prev => ({ ...prev, [id]: Number(value) }));
 
+    // taxAwareTotal: use server-calculated total (incl. tax & discount) when available
+    const taxAwareTotal  = taxPreview?.total ?? totalWithDiscount;
     const totalPaid      = Object.values(payments).reduce((s, v) => s + (v || 0), 0);
     const walletUsable   = Math.min(walletAmount, customer?.wallet_balance ?? 0);
     const effectivePaid  = totalPaid + walletUsable;
-    const remaining      = Math.max(0, totalWithDiscount - effectivePaid);
-    const surplus        = Math.max(0, effectivePaid - totalWithDiscount);
+    const remaining      = Math.max(0, taxAwareTotal - effectivePaid);
+    const surplus        = Math.max(0, effectivePaid - taxAwareTotal);
 
     /* ── Print ── */
     const handlePrint = () => {
@@ -175,7 +204,7 @@ export default function Checkout({ order, payment_methods }) {
                 </div>
                 <div className="bg-red-50 text-[#ee1d23] px-4 py-2 rounded-xl font-black flex items-center gap-2 border border-red-100 shadow-sm">
                     <ReceiptText size={20} />
-                    <span>{totalWithDiscount.toFixed(2)} {currency}</span>
+                    <span>{taxAwareTotal.toFixed(2)} {currency}</span>
                 </div>
             </header>
 
@@ -544,18 +573,51 @@ export default function Checkout({ order, payment_methods }) {
                         </table>
 
                         <div className="space-y-2 border-t pt-4">
+                            {/* Subtotal */}
                             <div className="flex justify-between text-sm font-bold opacity-60">
                                 <span>المجموع الفرعي:</span>
-                                <span className="font-sans">{order.total_amount} {currency}</span>
+                                <span className="font-sans">
+                                    {taxPreview ? taxPreview.subtotal.toFixed(2) : order.total_amount} {currency}
+                                </span>
                             </div>
+
+                            {/* Discount */}
                             {discount > 0 && (
                                 <div className="flex justify-between text-sm font-bold text-red-600">
-                                    <span>الخصم:</span><span className="font-sans">-{discount} {currency}</span>
+                                    <span>الخصم:</span>
+                                    <span className="font-sans">-{Number(discount).toFixed(2)} {currency}</span>
                                 </div>
                             )}
+
+                            {/* Tax lines */}
+                            {taxPreview?.tax_breakdown?.length > 0 && (
+                                <>
+                                    {displayTaxBreakdown
+                                        ? taxPreview.tax_breakdown.map((t, i) => (
+                                            <div key={i} className="flex justify-between text-sm font-bold text-gray-600">
+                                                <span>
+                                                    {t.name}
+                                                    <span className="text-gray-400 font-sans text-[10px] mr-1">
+                                                        {parseFloat(t.rate).toFixed(1)}%
+                                                    </span>
+                                                </span>
+                                                <span className="font-sans">{Number(t.amount).toFixed(2)} {currency}</span>
+                                            </div>
+                                        ))
+                                        : taxPreview.total_tax > 0 && (
+                                            <div className="flex justify-between text-sm font-bold text-gray-600">
+                                                <span>الضريبة</span>
+                                                <span className="font-sans">{taxPreview.total_tax.toFixed(2)} {currency}</span>
+                                            </div>
+                                        )
+                                    }
+                                </>
+                            )}
+
+                            {/* Grand total */}
                             <div className="flex justify-between text-xl font-black border-t-2 border-black pt-2">
                                 <span>الإجمالي:</span>
-                                <span className="font-sans">{totalWithDiscount.toFixed(2)} {currency}</span>
+                                <span className="font-sans">{taxAwareTotal.toFixed(2)} {currency}</span>
                             </div>
 
                             <div className="border-t border-dashed border-gray-200 pt-2">
