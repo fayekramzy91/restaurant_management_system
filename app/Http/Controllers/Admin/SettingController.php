@@ -24,11 +24,12 @@ class SettingController extends Controller
     public function update(Request $request)
     {
         $data = $request->validate([
-            'restaurant_name' => 'required|string|max:255',
-            'currency' => 'required|string|max:20',
-            'working_hours' => 'nullable|string',
-            'phone' => 'nullable|string',
-            'address' => 'nullable|string',
+            'restaurant_name'              => 'required|string|max:255',
+            'currency'                     => 'required|string|max:20',
+            'working_hours'                => 'nullable|string',
+            'phone'                        => 'nullable|string',
+            'address'                      => 'nullable|string',
+            'customer_allow_add_after_submit' => 'nullable|in:0,1',
         ]);
 
         Setting::setMany($data);

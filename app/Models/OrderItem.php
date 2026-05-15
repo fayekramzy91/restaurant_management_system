@@ -19,7 +19,12 @@ class OrderItem extends Model
 
     public function menuItem()
     {
-        return $this->belongsTo(MenuItem::class);
+        return $this->belongsTo(MenuItem::class)->withTrashed();
+    }
+
+    public function getDisplayNameAttribute(): string
+    {
+        return $this->name ?? $this->menuItem?->name ?? '[صنف محذوف]';
     }
 
     public function addons()

@@ -22,8 +22,11 @@ npm run build
 # Run migrations
 php artisan migrate
 
-# Roll back and re-run all migrations
-php artisan migrate:fresh
+# Roll back and re-run all migrations + re-seed
+php artisan migrate:fresh --seed
+
+# Seed roles, permissions, and default admin user only
+php artisan db:seed --class=RolePermissionSeeder
 ```
 
 **Tests** — PHPUnit is configured but there are no application-level feature tests yet:
@@ -35,56 +38,125 @@ php artisan test
 
 ### Request lifecycle
 
-Every page load is an Inertia request. `HandleInertiaRequests` middleware shares two props to **every** page automatically:
-- `auth.user` — the authenticated user
-- `settings` — a flat key→value map from the `settings` table (restaurant name, currency, phone, etc.)
+Every page load is an Inertia request. `HandleInertiaRequests` middleware shares these props to **every** page automatically:
+- `auth.user` — id, name, username, email, is_active, `role{name, display_name}`, `branch{id, name}`, `permissions` (flat string array of permission keys)
+- `settings` — flat key→value map from the `settings` table
 
 In React, access these via `usePage().props`.
+
+### Authentication
+
+Login is **username-based** (not email). Email is optional. Default admin credentials seeded by `RolePermissionSeeder`: username `admin`, password `admin123`.
+
+After login, users are redirected by role:
+- `kitchen` → `/kitchen`
+- `waiter` / `cashier` → `/pos`
+- everything else → `/admin`
+
+### RBAC — Roles & Permissions
+
+Tables: `roles`, `permissions`, `role_permissions` (pivot). The `users` table has `role_id`, `branch_id`, `is_active`, `last_login`, `username`.
+
+**Middleware:** `CheckPermission` is registered as the `permission` alias. Apply it per route: `->middleware('permission:orders.view')`. It calls `$user->hasPermission($key)` which lazy-loads `role.permissions` via `loadMissing`.
+
+**Permission keys by group:**
+
+| Group | Keys |
+|---|---|
+| Dashboard | `dashboard.view` |
+| Orders | `orders.view`, `orders.create`, `orders.update`, `orders.cancel` |
+| Payments | `payments.process`, `payments.view` |
+| Menu | `menu.view`, `menu.create`, `menu.update`, `menu.delete` |
+| Customers | `customers.view`, `customers.create` |
+| Kitchen | `kitchen.view`, `kitchen.update` |
+| Reports | `reports.view` |
+| Admin | `admin.branches`, `admin.areas`, `admin.tables`, `admin.categories`, `admin.settings`, `admin.users`, `admin.roles` |
+
+**Default role assignments** (system roles, `is_system = true`, cannot be deleted):
+- **Admin** — all permissions
+- **Cashier** — dashboard, orders (all), payments, menu.view, customers
+- **Waiter** — dashboard, orders.view/create/update, menu.view, customers
+- **Kitchen** — kitchen.view, kitchen.update
+
+Frontend reads permissions from `usePage().props.auth.user.permissions` (array of key strings). `AdminLayout` filters its nav items using this array.
 
 ### Controller namespaces
 
 | Namespace | Purpose |
 |---|---|
-| `App\Http\Controllers\Admin\*` | Admin dashboard: branches, categories, menu items, areas, tables, orders (read-only list), settings, payment methods |
-| `App\Http\Controllers\POS\POSController` | Unified POS: index, table order, manage order, create order, checkout, process payment |
-| `App\Http\Controllers\POS\OrderController` | Order mutation endpoints: store, addItem, updateItem, updateItemAddons, removeItem, complete |
-| `App\Http\Controllers\Kitchen\KitchenController` | Kitchen display screen |
+| `App\Http\Controllers\Admin\*` | Admin CRUD: branches, categories, menu items, areas, tables, customers, orders (read-only), invoices, settings, payment methods, users, roles, reports |
+| `App\Http\Controllers\POS\POSController` | POS: index, table order, manage order, create order, checkout, process payment |
+| `App\Http\Controllers\POS\OrderController` | Order mutations: store, addItem, updateItem, updateItemAddons, removeItem, complete (send to kitchen) |
+| `App\Http\Controllers\Kitchen\KitchenController` | Kitchen display screen (KDS) |
 
 ### Route structure
 
 ```
-/admin/*              Admin CRUD (branches, categories, menu-items, areas, tables, settings)
-/admin/orders         Admin orders list — read-only, search/filter/sort/paginate
-/pos                  Unified POS — tables tab + orders queue tab
-/pos/table/{id}       Manage/create a dine-in order for a table
-/pos/order/{id}       Manage an existing order (any type)
-/pos/new-order        POST — create a takeaway/delivery order, redirects to /pos/order/{id}
-/pos/checkout/{id}    Payment screen
-/pos/payment/{id}     POST — process payment
-/kitchen              KDS screen
-/waiter               Redirects → /pos
-/waiter/table/{id}    Redirects → /pos/table/{id}
+/admin/*                  Admin CRUD — requires auth + permission:admin.*
+/admin/dashboard          requires permission:dashboard.view
+/admin/orders             Read-only list — requires permission:reports.view
+/admin/invoices           Invoice list/show — requires permission:payments.view
+/admin/users              requires permission:admin.users
+/admin/roles              requires permission:admin.roles
+/admin/menu-items/{id}/restore        POST — restore soft-deleted item
+/admin/menu-items/{id}/force-destroy  DELETE — permanent delete (guarded)
+/pos                      Tables + orders queue — requires permission:orders.view
+/pos/table/{id}           Dine-in order — requires permission:orders.create
+/pos/order/{id}           Manage existing order — requires permission:orders.view
+/pos/checkout/{id}        Payment screen — requires permission:payments.process
+/kitchen                  KDS — requires permission:kitchen.view
+/waiter, /waiter/table    Redirects → /pos equivalents
 ```
 
-All routes require `auth` + `verified` middleware.
+All routes require `auth` middleware. The `verified` middleware is **not used** (email is optional).
 
 ### Order lifecycle
 
 ```
-pending → preparing (sent to kitchen) → ready (kitchen marks ready) → completed (payment processed)
+pending → preparing (sent to kitchen via POST /orders/{id}/complete) → ready (kitchen marks ready) → completed (payment processed)
 ```
 
-Payment status is separate: `unpaid | partially_paid | paid`. An order can be marked `completed` even if partially paid.
-
 Order types: `dine_in` (requires `table_id`), `takeaway`, `delivery`.
+
+### Financial layer — Invoice & PaymentEntry
+
+**The `orders` table has no financial columns.** All money lives in two models:
+
+- **`Invoice`** — one-to-one with `Order`. Holds `subtotal`, `discount`, `tax_rate`, `tax_amount`, `total`, `paid_amount`, `wallet_amount`, `status` (draft/paid/partial/void/refunded), `issued_at`. `Order::getPaymentStatusAttribute()` derives payment state by reading the associated invoice.
+- **`PaymentEntry`** — append-only ledger rows per invoice. Each row is a `payment` or `refund`. No `updated_at` (immutable). `PaymentEntry::created()` observer calls `$invoice->recalculatePaidAmount()` automatically.
+- **`InvoiceItem`** — immutable snapshot of every order line item at invoice creation time. No `updated_at`. Created atomically in `POSController::processPayment()` via `InvoiceItemSnapshotter::snapshot()`.
+
+**`InvoiceItemSnapshotter`** (`app/Services/InvoiceItemSnapshotter.php`):
+- Call `app(InvoiceItemSnapshotter::class)->snapshot($invoice)` inside a DB transaction after `Invoice::create()`.
+- Idempotent — safe to call multiple times (skips if `invoice_items` already exist for that invoice).
+- Snapshots `order.items` as parent rows and `order_item.addons` as child rows linked via `parent_invoice_item_id`.
+
+When displaying invoice line items, prefer `invoice.items` (the snapshot) over `invoice.order.items` (live data). For backward-compat with invoices created before the snapshot system, fall back to `invoice.order?.items`.
+
+### Menu items — soft deletes & data integrity
+
+`MenuItem` uses `SoftDeletes`. **`$menuItem->delete()` is a soft delete, not a hard delete** — it sets `deleted_at` and hides the item from all queries. The image file is preserved so the item can be restored.
+
+- Soft-deleted items are excluded from POS menus automatically (global scope).
+- Admin restore: `MenuItem::withTrashed()->find($id)->restore()`.
+- Admin force-delete: `MenuItem::withTrashed()->find($id)->forceDelete()` — check for `InvoiceItem` references first.
+- `order_items.menu_item_id` and `order_item_addons.menu_item_id` are **nullable** with `onDelete('set null')` (not cascade). The FK is informational; the `name` column is the authoritative display source.
+
+**Name snapshot pattern** — both `order_items` and `order_item_addons` have a `name` column capturing the item name at order time. When displaying item names in any order/invoice/kitchen view, always use:
+```js
+item.name ?? item.menu_item?.name ?? '[صنف محذوف]'
+```
+`OrderItem::menuItem()` and `OrderItemAddon::menuItem()` both use `->withTrashed()` so admin views can still resolve archived items by FK.
 
 ### Menu items & addons
 
 `menu_items` has a boolean `is_addon` flag. Regular items (`is_addon = false`) appear in the ordering grid. Addon items (`is_addon = true`) appear in the addon modal, attached to an `OrderItem` via `order_item_addons`. Both types share the same `menu_items` table and pricing logic.
 
+When creating order items in `OrderController`, always include `'name' => $menuItem->name` in the `create()` payload. Validation must exclude soft-deleted items: `'menu_item_id' => 'required|exists:menu_items,id,deleted_at,NULL'`.
+
 ### Settings
 
-`Setting` model stores key/value pairs. Use `Setting::getValue($key, $default)` to read a single value server-side. Client-side, all settings are available via `usePage().props.settings['key']` on every page.
+`Setting` model stores key/value pairs. Use `Setting::getValue($key, $default)` server-side. All settings are in `usePage().props.settings` on every page. Currency defaults to `ILS` (₪).
 
 ---
 
@@ -96,11 +168,10 @@ The codebase intentionally uses **two different UI stacks**. Do not mix them.
 
 Uses **shadcn/ui** components built on Radix UI primitives.
 
-- Component library lives in `resources/js/Components/ui/`: `button`, `badge`, `card`, `dialog`, `input`, `label`, `table`, `separator`, `avatar`, `dropdown-menu`
-- `cn()` utility is in `resources/js/lib/utils.js` — always use it for conditional class merging in admin components
-- CSS variables for theming are defined in `resources/css/app.css` using `@theme inline` (Tailwind v4 syntax). Primary brand colour `#ee1d23` is mapped to `--primary`
-- Tailwind utility classes like `bg-primary`, `text-muted-foreground`, `border-border` all resolve via those CSS variables
-- All admin pages share `AdminLayout` which provides the collapsible dark sidebar and sticky header
+- Component library: `resources/js/Components/ui/` — `button`, `badge`, `card`, `dialog`, `input`, `label`, `table`, `separator`, `avatar`, `dropdown-menu`
+- Always use `cn()` from `resources/js/lib/utils.js` for conditional class merging
+- CSS variables in `resources/css/app.css` using `@theme inline` (Tailwind v4). Primary brand colour `#ee1d23` → `--primary`
+- All admin pages use `AdminLayout`, which renders the collapsible dark sidebar and sticky header. The sidebar filters nav items by the current user's permissions.
 
 **Typical admin page pattern:**
 ```jsx
@@ -108,27 +179,28 @@ import { Card } from '@/Components/ui/card';
 import { Button } from '@/Components/ui/button';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/Components/ui/dialog';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/Components/ui/table';
-// CRUD state, useForm hook, list + modal in a single file
+// Single file: CRUD state + useForm hook + list table + create/edit modal
 ```
 
 ### POS & Kitchen (`resources/js/Pages/POS/`, `resources/js/Pages/Kitchen/`)
 
-Uses **custom Tailwind classes only** — no shadcn components, no `cn()`. These screens are used on touch devices at high frequency so they must stay lightweight.
-- Brand colours used as Tailwind arbitrary values: `bg-[#ee1d23]`, `bg-[#6f272a]`
+Uses **custom Tailwind classes only** — no shadcn components, no `cn()`. Touch-optimised.
+- Brand colours as arbitrary values: `bg-[#ee1d23]`, `bg-[#6f272a]`
 - Animations via `framer-motion`
 - Icons via `lucide-react`
-- `dir="rtl"` on the root container, `font-Cairo` on the page root
+- `dir="rtl"` on root container, `font-Cairo` on page root
 
 ---
 
 ## UI Conventions (shared)
 
-- All UI is Arabic RTL
+- All UI is **Arabic RTL**
 - Brand colours: `#ee1d23` (primary red), `#6f272a` (dark red), `#feca0b` (accent yellow)
 - Icons: `lucide-react` throughout
-- The `@` path alias resolves to `resources/js/`
+- `@` path alias → `resources/js/`
 
-<!-- code-review-graph MCP tools -->
+---
+
 ## MCP Tools: code-review-graph
 
 **IMPORTANT: This project has a knowledge graph. ALWAYS use the

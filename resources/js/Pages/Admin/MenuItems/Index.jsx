@@ -1,6 +1,6 @@
 import AdminLayout from '@/Layouts/AdminLayout';
-import { Head, useForm, usePage } from '@inertiajs/react';
-import { Plus, Edit, Trash2, Utensils, CheckCircle2, CircleOff, Sparkles, Clock, ImageIcon, X } from 'lucide-react';
+import { Head, useForm, usePage, router } from '@inertiajs/react';
+import { Plus, Edit, Trash2, Utensils, CheckCircle2, CircleOff, Sparkles, Clock, ImageIcon, X, RotateCcw, Archive } from 'lucide-react';
 import { useState, useRef } from 'react';
 import { Button } from '@/Components/ui/button';
 import { Input } from '@/Components/ui/input';
@@ -21,10 +21,11 @@ function Pill({ icon: Icon, label, cls }) {
 
 const selectCls = 'flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring';
 
-export default function Index({ menuItems, categories }) {
+export default function Index({ menuItems, archived, categories }) {
     const { settings } = usePage().props;
     const currency = settings?.currency || 'SAR';
 
+    const [activeTab, setActiveTab] = useState('active');
     const [open, setOpen] = useState(false);
     const [editing, setEditing] = useState(null);
     const [preview, setPreview] = useState(null);
@@ -85,10 +86,55 @@ export default function Index({ menuItems, categories }) {
 
     const currentImage = preview || (editing?.image ?? null);
 
+    const handleRestore = (item) => {
+        router.post(route('admin.menu-items.restore', item.id));
+    };
+
+    const handleForceDelete = (item) => {
+        if (confirm(`هل أنت متأكد من الحذف النهائي لـ "${item.name}"؟ لا يمكن التراجع عن هذا الإجراء.`)) {
+            router.delete(route('admin.menu-items.force-destroy', item.id));
+        }
+    };
+
     return (
         <AdminLayout title="قائمة الطعام">
             <Head title="المنيو" />
 
+            {/* Tab switcher */}
+            <div className="flex items-center gap-2 mb-4 border-b border-slate-200">
+                <button
+                    onClick={() => setActiveTab('active')}
+                    className={cn(
+                        'pb-3 px-1 text-sm font-semibold border-b-2 transition-colors',
+                        activeTab === 'active'
+                            ? 'border-primary text-primary'
+                            : 'border-transparent text-slate-400 hover:text-slate-600'
+                    )}
+                >
+                    الأصناف النشطة
+                    <span className={cn('mr-1.5 text-[11px] font-bold px-1.5 py-0.5 rounded-full font-sans', activeTab === 'active' ? 'bg-primary/10 text-primary' : 'bg-slate-100 text-slate-400')}>
+                        {menuItems.length}
+                    </span>
+                </button>
+                <button
+                    onClick={() => setActiveTab('archived')}
+                    className={cn(
+                        'pb-3 px-1 text-sm font-semibold border-b-2 transition-colors',
+                        activeTab === 'archived'
+                            ? 'border-amber-500 text-amber-600'
+                            : 'border-transparent text-slate-400 hover:text-slate-600'
+                    )}
+                >
+                    الأصناف المؤرشفة
+                    {archived.length > 0 && (
+                        <span className={cn('mr-1.5 text-[11px] font-bold px-1.5 py-0.5 rounded-full font-sans', activeTab === 'archived' ? 'bg-amber-100 text-amber-600' : 'bg-slate-100 text-slate-400')}>
+                            {archived.length}
+                        </span>
+                    )}
+                </button>
+            </div>
+
+            {activeTab === 'active' && (
             <Card className="shadow-sm border-slate-200/80 overflow-hidden">
                 <div className="px-5 py-4 flex justify-between items-center border-b border-slate-100 bg-white">
                     <div className="flex items-center gap-2.5">
@@ -116,7 +162,6 @@ export default function Index({ menuItems, categories }) {
                             <TableRow key={item.id} className="border-slate-100 hover:bg-slate-50/50 transition-colors group">
                                 <TableCell>
                                     <div className="flex items-center gap-2.5">
-                                        {/* Thumbnail */}
                                         <div className="w-9 h-9 rounded-lg bg-slate-100 flex items-center justify-center shrink-0 overflow-hidden">
                                             {item.image
                                                 ? <img src={item.image} alt={item.name} className="w-full h-full object-cover" />
@@ -161,8 +206,8 @@ export default function Index({ menuItems, categories }) {
                                         <Button variant="ghost" size="icon" onClick={() => openEdit(item)} className="h-7 w-7 text-slate-300 hover:text-blue-600 hover:bg-blue-50">
                                             <Edit size={13} />
                                         </Button>
-                                        <Button variant="ghost" size="icon" onClick={() => confirm('هل أنت متأكد؟') && destroy(route('admin.menu-items.destroy', item.id))} className="h-7 w-7 text-slate-300 hover:text-red-500 hover:bg-red-50">
-                                            <Trash2 size={13} />
+                                        <Button variant="ghost" size="icon" onClick={() => confirm('هل أنت متأكد؟ سيتم أرشفة الصنف ويمكن استعادته لاحقاً.') && destroy(route('admin.menu-items.destroy', item.id))} className="h-7 w-7 text-slate-300 hover:text-red-500 hover:bg-red-50">
+                                            <Archive size={13} />
                                         </Button>
                                     </div>
                                 </TableCell>
@@ -179,6 +224,82 @@ export default function Index({ menuItems, categories }) {
                     </TableBody>
                 </Table>
             </Card>
+            )}
+
+            {activeTab === 'archived' && (
+            <Card className="shadow-sm border-slate-200/80 overflow-hidden">
+                <div className="px-5 py-4 border-b border-slate-100 bg-white">
+                    <div className="flex items-center gap-2.5">
+                        <h3 className="font-semibold text-slate-700 text-sm">الأصناف المؤرشفة</h3>
+                        <span className="bg-amber-100 text-amber-600 text-[11px] font-semibold px-2 py-0.5 rounded-full font-sans">{archived.length}</span>
+                    </div>
+                    <p className="text-xs text-slate-400 mt-1">هذه الأصناف مخفية من الطلبات الجديدة ولكن بياناتها محفوظة في السجلات التاريخية</p>
+                </div>
+
+                <Table>
+                    <TableHeader>
+                        <TableRow className="bg-slate-50/60 hover:bg-slate-50/60 border-slate-100">
+                            <TableHead className="text-xs font-semibold text-slate-400 uppercase tracking-wide">الصنف</TableHead>
+                            <TableHead className="text-xs font-semibold text-slate-400 uppercase tracking-wide">التصنيف</TableHead>
+                            <TableHead className="text-xs font-semibold text-slate-400 uppercase tracking-wide">السعر</TableHead>
+                            <TableHead className="text-xs font-semibold text-slate-400 uppercase tracking-wide">تاريخ الأرشفة</TableHead>
+                            <TableHead className="text-xs font-semibold text-slate-400 uppercase tracking-wide text-left">العمليات</TableHead>
+                        </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                        {archived.map((item) => (
+                            <TableRow key={item.id} className="border-slate-100 hover:bg-amber-50/30 transition-colors group">
+                                <TableCell>
+                                    <div className="flex items-center gap-2.5">
+                                        <div className="w-9 h-9 rounded-lg bg-slate-100 flex items-center justify-center shrink-0 overflow-hidden opacity-50">
+                                            {item.image
+                                                ? <img src={item.image} alt={item.name} className="w-full h-full object-cover" />
+                                                : <Utensils size={14} className="text-slate-400" />
+                                            }
+                                        </div>
+                                        <div>
+                                            <div className="font-semibold text-slate-500 text-sm">{item.name}</div>
+                                            {item.description && (
+                                                <p className="text-[11px] text-slate-300 truncate max-w-[180px] mt-0.5">{item.description}</p>
+                                            )}
+                                        </div>
+                                    </div>
+                                </TableCell>
+                                <TableCell>
+                                    <span className="text-xs font-semibold text-slate-400 bg-slate-100 px-2 py-0.5 rounded-full">
+                                        {item.category?.name}
+                                    </span>
+                                </TableCell>
+                                <TableCell className="font-semibold font-sans text-slate-400 text-sm">
+                                    {item.price} <span className="text-xs text-slate-300 font-normal">{currency}</span>
+                                </TableCell>
+                                <TableCell className="text-xs text-slate-400 font-sans">
+                                    {item.deleted_at ? new Date(item.deleted_at).toLocaleDateString('ar-SA') : '—'}
+                                </TableCell>
+                                <TableCell className="text-left">
+                                    <div className="flex items-center gap-1 justify-end">
+                                        <Button variant="ghost" size="sm" onClick={() => handleRestore(item)} className="h-7 text-xs text-emerald-600 hover:text-emerald-700 hover:bg-emerald-50 gap-1">
+                                            <RotateCcw size={11} /> استعادة
+                                        </Button>
+                                        <Button variant="ghost" size="sm" onClick={() => handleForceDelete(item)} className="h-7 text-xs text-red-400 hover:text-red-600 hover:bg-red-50 gap-1">
+                                            <Trash2 size={11} /> حذف نهائي
+                                        </Button>
+                                    </div>
+                                </TableCell>
+                            </TableRow>
+                        ))}
+                        {archived.length === 0 && (
+                            <TableRow>
+                                <TableCell colSpan={5} className="text-center py-16 text-slate-300">
+                                    <Archive size={28} className="mx-auto mb-2.5 opacity-40" />
+                                    <p className="font-semibold text-sm">لا توجد أصناف مؤرشفة</p>
+                                </TableCell>
+                            </TableRow>
+                        )}
+                    </TableBody>
+                </Table>
+            </Card>
+            )}
 
             <Dialog open={open} onOpenChange={setOpen}>
                 <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto" dir="rtl">

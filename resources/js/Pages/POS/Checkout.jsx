@@ -17,9 +17,12 @@ export default function Checkout({ order, payment_methods }) {
     const currency     = settings?.currency    || 'SAR';
     const restaurantName = settings?.restaurant_name || 'المطعم';
 
+    /* ── Invoice (existing, for re-checkout) ── */
+    const existingInvoice = order.invoice ?? null;
+
     /* ── Payment state ── */
     const [shouldPrint,   setShouldPrint]   = useState(true);
-    const [discount,      setDiscount]      = useState(order.discount || 0);
+    const [discount,      setDiscount]      = useState(existingInvoice?.discount ?? order.discount ?? 0);
     const [payments,      setPayments]      = useState({});
     const [notes,         setNotes]         = useState(order.notes         || '');
     const [privateNotes,  setPrivateNotes]  = useState(order.private_notes || '');
@@ -43,20 +46,30 @@ export default function Checkout({ order, payment_methods }) {
 
     /* ── Initialise default payment ── */
     const totalWithDiscount = Math.max(0, order.total_amount - discount);
+
+    const alreadyPaid = existingInvoice
+        ? (existingInvoice.payment_entries ?? [])
+            .filter(e => e.type === 'payment')
+            .reduce((sum, e) => sum + Number(e.amount), 0)
+            + Number(existingInvoice.wallet_amount || 0)
+        : 0;
+
+    const remainingToPay = Math.max(0, totalWithDiscount - alreadyPaid);
+
     useEffect(() => {
         if (payment_methods?.length > 0 && Object.keys(payments).length === 0) {
             const def = payment_methods.find(m => m.is_system) || payment_methods[0];
-            if (def) setPayments({ [def.id]: totalWithDiscount });
+            if (def) setPayments({ [def.id]: remainingToPay });
         }
     }, []);
 
     useEffect(() => {
         const paid = Object.values(payments).reduce((s, v) => s + (v || 0), 0);
-        if (paid > totalWithDiscount && Object.keys(payments).length === 1) {
+        if (paid > remainingToPay && Object.keys(payments).length === 1) {
             const id = Object.keys(payments)[0];
-            setPayments({ [id]: totalWithDiscount });
+            setPayments({ [id]: remainingToPay });
         }
-    }, [totalWithDiscount]);
+    }, [remainingToPay]);
 
     /* ── Customer search ── */
     useEffect(() => {
@@ -111,8 +124,8 @@ export default function Checkout({ order, payment_methods }) {
     const totalPaid      = Object.values(payments).reduce((s, v) => s + (v || 0), 0);
     const walletUsable   = Math.min(walletAmount, customer?.wallet_balance ?? 0);
     const effectivePaid  = totalPaid + walletUsable;
-    const remaining      = Math.max(0, totalWithDiscount - effectivePaid);
-    const surplus        = Math.max(0, effectivePaid - totalWithDiscount);
+    const remaining      = Math.max(0, remainingToPay - effectivePaid);
+    const surplus        = Math.max(0, effectivePaid - remainingToPay);
 
     /* ── Print ── */
     const handlePrint = () => {
@@ -175,7 +188,14 @@ export default function Checkout({ order, payment_methods }) {
                 </div>
                 <div className="bg-red-50 text-[#ee1d23] px-4 py-2 rounded-xl font-black flex items-center gap-2 border border-red-100 shadow-sm">
                     <ReceiptText size={20} />
-                    <span>{totalWithDiscount.toFixed(2)} {currency}</span>
+                    {alreadyPaid > 0 ? (
+                        <span>
+                            متبقي: {remainingToPay.toFixed(2)} {currency}
+                            <span className="text-xs font-bold text-red-300 mr-1">/ {totalWithDiscount.toFixed(2)}</span>
+                        </span>
+                    ) : (
+                        <span>{totalWithDiscount.toFixed(2)} {currency}</span>
+                    )}
                 </div>
             </header>
 
@@ -334,10 +354,32 @@ export default function Checkout({ order, payment_methods }) {
 
                     {/* Payment Methods */}
                     <section className="bg-white p-6 rounded-3xl shadow-sm border border-gray-100">
+
+                        {/* Already-paid entries (re-checkout) */}
+                        {existingInvoice?.payment_entries?.length > 0 && (
+                            <div className="mb-6 p-4 bg-emerald-50 border border-emerald-100 rounded-2xl">
+                                <p className="text-xs font-black text-emerald-700 mb-3">مدفوعات سابقة على هذه الفاتورة</p>
+                                <div className="space-y-1.5">
+                                    {existingInvoice.payment_entries.filter(e => e.type === 'payment').map(e => (
+                                        <div key={e.id} className="flex justify-between text-sm font-bold text-emerald-700">
+                                            <span>{e.payment_method?.name}</span>
+                                            <span className="font-sans">{Number(e.amount).toFixed(2)} {currency}</span>
+                                        </div>
+                                    ))}
+                                    {Number(existingInvoice.wallet_amount) > 0 && (
+                                        <div className="flex justify-between text-sm font-bold text-emerald-700">
+                                            <span>محفظة</span>
+                                            <span className="font-sans">{Number(existingInvoice.wallet_amount).toFixed(2)} {currency}</span>
+                                        </div>
+                                    )}
+                                </div>
+                            </div>
+                        )}
+
                         <div className="flex justify-between items-center mb-6">
                             <h3 className="text-lg font-black text-gray-800 flex items-center gap-2">
                                 <Banknote className="text-green-600" size={20} />
-                                طرق الدفع
+                                {existingInvoice ? 'دفعة إضافية' : 'طرق الدفع'}
                             </h3>
                             <div className="text-sm font-bold text-gray-500">
                                 المتبقي: <span className={`font-black ${remaining > 0 ? 'text-red-500' : 'text-green-600'}`}>{remaining.toFixed(2)} {currency}</span>
@@ -497,6 +539,12 @@ export default function Checkout({ order, payment_methods }) {
                         <div className="flex justify-between text-[11px] font-bold mb-1">
                             <span>رقم الطلب:</span><span>#{order.id}</span>
                         </div>
+                        {existingInvoice?.invoice_number && (
+                            <div className="flex justify-between text-[11px] font-bold mb-1">
+                                <span>رقم الفاتورة:</span>
+                                <span className="font-mono">{existingInvoice.invoice_number}</span>
+                            </div>
+                        )}
                         <div className="flex justify-between text-[11px] font-bold mb-1">
                             <span>التاريخ:</span>
                             <span className="font-sans">{new Date().toLocaleString('ar-SA')}</span>
@@ -525,11 +573,11 @@ export default function Checkout({ order, payment_methods }) {
                                 {order.items.map(item => (
                                     <tr key={item.id} className="border-b border-dashed border-gray-100 align-top">
                                         <td className="py-2">
-                                            <div className="font-bold">{item.menu_item?.name}</div>
+                                            <div className="font-bold">{item.name ?? item.menu_item?.name ?? '[صنف محذوف]'}</div>
                                             {item.addons?.length > 0 && (
                                                 <div className="text-[9px] text-gray-500 font-bold mt-0.5">
                                                     {item.addons.map(a => (
-                                                        <div key={a.id}>+ {a.quantity}x {a.menu_item?.name}</div>
+                                                        <div key={a.id}>+ {a.quantity}x {a.name ?? a.menu_item?.name ?? '[إضافة محذوفة]'}</div>
                                                     ))}
                                                 </div>
                                             )}

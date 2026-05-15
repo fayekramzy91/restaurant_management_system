@@ -19,6 +19,12 @@ return Application::configure(basePath: dirname(__DIR__))
         $middleware->alias([
             'permission' => \App\Http\Middleware\CheckPermission::class,
         ]);
+
+        $middleware->validateCsrfTokens(except: [
+            'menu/*/order',
+            'menu/*/order/*',
+            'menu/*/order/*/items',
+        ]);
     })
     ->withExceptions(function (Exceptions $exceptions): void {
         //

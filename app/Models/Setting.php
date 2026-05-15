@@ -20,4 +20,9 @@ class Setting extends Model
             self::updateOrCreate(['key' => $key], ['value' => $value]);
         }
     }
+
+    public static function getAllAsArray(): array
+    {
+        return static::pluck('value', 'key')->toArray();
+    }
 }
