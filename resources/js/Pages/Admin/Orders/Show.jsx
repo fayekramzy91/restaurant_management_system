@@ -6,6 +6,7 @@ import {
     Send, ChefHat, CreditCard, Tag, CheckCheck, Ban, FileText,
     Utensils, Clock, CheckCircle2, CircleOff, BadgeCheck,
     CircleDashed, Truck, Package, Users, Star, GitBranch,
+    User, Wallet, Receipt, XCircle,
 } from 'lucide-react';
 import { Card, CardContent } from '@/Components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/Components/ui/table';
@@ -47,7 +48,31 @@ const TIMELINE_MAP = {
     order_completed:   { icon: CheckCheck,   color: 'bg-emerald-400' },
     order_cancelled:   { icon: Ban,          color: 'bg-red-400' },
     notes_updated:     { icon: FileText,     color: 'bg-slate-400' },
+    customer_linked:   { icon: User,         color: 'bg-blue-400' },
+    wallet_used:       { icon: Wallet,       color: 'bg-purple-400' },
+    wallet_credited:   { icon: Wallet,       color: 'bg-emerald-400' },
+    kitchen_started:   { icon: ChefHat,      color: 'bg-orange-400' },
+    // Financial layer events (invoice_created / payment_entry_added wired in after Invoice layer is built)
+    invoice_created:     { icon: FileText,    color: 'bg-blue-400' },
+    payment_entry_added: { icon: CreditCard,  color: 'bg-emerald-400' },
+    payment_recorded:    { icon: CreditCard,  color: 'bg-emerald-400' },
+    invoice_tax_applied: { icon: Receipt,     color: 'bg-amber-400' },
+    invoice_voided:      { icon: XCircle,     color: 'bg-red-400' },
 };
+
+/* ── Timeline label enrichment ──────────────────── */
+function entryLabel(entry) {
+    const m = entry.metadata;
+    if (entry.event === 'payment_recorded' && m?.method && m?.amount != null) {
+        return `${entry.description} — ${m.method}: ${m.amount}₪`;
+    }
+    if (entry.event === 'order_completed' && m?.total != null) {
+        const parts = [`الإجمالي: ${m.total}₪`];
+        if (m.payment_count) parts.push(`دفعات: ${m.payment_count}`);
+        return `${entry.description} — ${parts.join(' | ')}`;
+    }
+    return entry.description;
+}
 
 /* ── Pill badge ─────────────────────────────────── */
 function Pill({ map, value }) {
@@ -349,7 +374,7 @@ export default function Show({ order }) {
                                                 </div>
                                                 {/* Content */}
                                                 <div className={cn('flex-1 pb-5', isLast && 'pb-0')}>
-                                                    <p className="text-sm font-semibold text-slate-700 leading-snug">{entry.description}</p>
+                                                    <p className="text-sm font-semibold text-slate-700 leading-snug">{entryLabel(entry)}</p>
                                                     <div className="flex items-center gap-2 mt-1 flex-wrap">
                                                         {entry.user && (
                                                             <span className="text-[11px] text-slate-400 font-semibold">{entry.user.name}</span>

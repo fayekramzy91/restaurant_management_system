@@ -158,9 +158,10 @@ class POSController extends Controller
                     ]);
                     $totalPaid  += $payment['amount'];
                     $methodName  = PaymentMethod::find($payment['payment_method_id'])?->name ?? '—';
-                    $order->logEvent('payment_processed',
-                        "تم استلام {$payment['amount']} عبر {$methodName}",
-                        ['method' => $methodName, 'amount' => $payment['amount']]
+                    // TODO: replace with payment_entry_added after PaymentEntry is integrated
+                    $order->logEvent('payment_recorded',
+                        "تم تسجيل دفعة: {$payment['amount']} عبر {$methodName}",
+                        ['method' => $methodName, 'amount' => $payment['amount'], 'type' => 'payment']
                     );
                 }
             }
@@ -203,9 +204,15 @@ class POSController extends Controller
             'private_notes'  => $validated['private_notes'] ?? $order->private_notes,
         ]);
 
+        // TODO: replace with invoice_created event after Invoice layer is built
         $order->logEvent('order_completed',
             'تم إغلاق الطلب',
-            ['payment_status' => $paymentStatus, 'total_paid' => $effectivePaid]
+            [
+                'total'         => $order->total_amount,
+                'discount'      => $discount ?? 0,
+                'wallet_used'   => $walletUsed,
+                'payment_count' => count(array_filter($validated['payments'] ?? [], fn($p) => ($p['amount'] ?? 0) > 0)),
+            ]
         );
 
         if ($order->table_id) {
