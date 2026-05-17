@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Admin;
 use App\Http\Controllers\Controller;
 use App\Models\Invoice;
 use App\Models\PaymentMethod;
+use App\Models\Setting;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Inertia\Inertia;
@@ -56,6 +57,7 @@ class InvoiceController extends Controller
     {
         $invoice->load([
             'items.addons',
+            'taxes',
             'order.items.menuItem',
             'order.items.addons.menuItem',
             'order.table.area',
@@ -68,8 +70,9 @@ class InvoiceController extends Controller
         ]);
 
         return Inertia::render('Admin/Invoices/Show', [
-            'invoice'         => $invoice,
-            'payment_methods' => PaymentMethod::where('is_active', true)->get(),
+            'invoice'              => $invoice,
+            'payment_methods'      => PaymentMethod::where('is_active', true)->get(),
+            'displayTaxBreakdown'  => Setting::getValue('tax.display_breakdown', '1') !== '0',
         ]);
     }
 

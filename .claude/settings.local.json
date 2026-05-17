@@ -2,7 +2,8 @@
   "permissions": {
     "allow": [
       "Bash(npm run *)",
-      "Bash(php artisan *)"
+      "Bash(php artisan *)",
+      "Bash(grep -n \"TaxRate\\\\|taxes\\\\b\" /Applications/MAMP/htdocs/restaurant_management_system/routes/web.php | head -10)"
     ]
   },
   "enableAllProjectMcpServers": true,

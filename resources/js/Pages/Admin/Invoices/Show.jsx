@@ -49,7 +49,7 @@ function SectionCard({ title, icon: Icon, iconCls, children }) {
     );
 }
 
-export default function Show({ invoice, payment_methods }) {
+export default function Show({ invoice, payment_methods, displayTaxBreakdown }) {
     const { settings, auth } = usePage().props;
     const currency    = settings?.currency ?? 'SAR';
     const permissions = auth.user?.permissions ?? [];
@@ -159,12 +159,20 @@ export default function Show({ invoice, payment_methods }) {
                                     <span>الخصم</span>
                                 </div>
                             )}
-                            {taxAmount > 0 && (
-                                <div className="flex justify-between text-slate-500 font-semibold">
-                                    <span className="font-sans">+{taxAmount.toFixed(2)} {currency}</span>
-                                    <span>الضريبة</span>
-                                </div>
-                            )}
+                            {displayTaxBreakdown && invoice.taxes?.length > 0
+                                ? invoice.taxes.map(tax => (
+                                    <div key={tax.id} className="flex justify-between text-slate-500 font-semibold">
+                                        <span className="font-sans">+{Number(tax.tax_amount).toFixed(2)} {currency}</span>
+                                        <span>{tax.tax_name} <span className="font-sans text-slate-400">({Number(tax.rate)}%)</span></span>
+                                    </div>
+                                ))
+                                : taxAmount > 0 && (
+                                    <div className="flex justify-between text-slate-500 font-semibold">
+                                        <span className="font-sans">+{taxAmount.toFixed(2)} {currency}</span>
+                                        <span>الضريبة</span>
+                                    </div>
+                                )
+                            }
                             <div className="flex justify-between font-bold text-slate-800 border-t border-slate-100 pt-2">
                                 <span className="font-sans">{total.toFixed(2)} {currency}</span>
                                 <span>الإجمالي</span>

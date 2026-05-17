@@ -20,6 +20,8 @@ export default function Checkout({ order, payment_methods }) {
     /* ── Invoice (existing, for re-checkout) ── */
     const existingInvoice = order.invoice ?? null;
 
+    const displayTaxBreakdown = settings?.['tax.display_breakdown'] !== '0';
+
     /* ── Payment state ── */
     const [shouldPrint,   setShouldPrint]   = useState(true);
     const [discount,      setDiscount]      = useState(existingInvoice?.discount ?? order.discount ?? 0);
@@ -27,6 +29,7 @@ export default function Checkout({ order, payment_methods }) {
     const [notes,         setNotes]         = useState(order.notes         || '');
     const [privateNotes,  setPrivateNotes]  = useState(order.private_notes || '');
     const [processing,    setProcessing]    = useState(false);
+    const [taxPreview,    setTaxPreview]    = useState(null);
 
     /* ── Customer state ── */
     const [customer,        setCustomer]        = useState(order.customer ?? null);
@@ -70,6 +73,25 @@ export default function Checkout({ order, payment_methods }) {
             setPayments({ [id]: remainingToPay });
         }
     }, [remainingToPay]);
+
+    /* ── Tax preview — fetch on mount and whenever discount changes ── */
+    useEffect(() => {
+        const t = setTimeout(async () => {
+            try {
+                const res = await fetch(route('pos.tax-preview'), {
+                    method:  'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-XSRF-TOKEN': csrfToken(),
+                        'Accept':       'application/json',
+                    },
+                    body: JSON.stringify({ order_id: order.id, discount }),
+                });
+                if (res.ok) setTaxPreview(await res.json());
+            } catch { /* silent — receipt falls back to order totals */ }
+        }, 500);
+        return () => clearTimeout(t);
+    }, [discount]);
 
     /* ── Customer search ── */
     useEffect(() => {
@@ -594,16 +616,42 @@ export default function Checkout({ order, payment_methods }) {
                         <div className="space-y-2 border-t pt-4">
                             <div className="flex justify-between text-sm font-bold opacity-60">
                                 <span>المجموع الفرعي:</span>
-                                <span className="font-sans">{order.total_amount} {currency}</span>
+                                <span className="font-sans">
+                                    {taxPreview
+                                        ? Number(taxPreview.subtotal).toFixed(2)
+                                        : Number(order.total_amount).toFixed(2)
+                                    } {currency}
+                                </span>
                             </div>
                             {discount > 0 && (
                                 <div className="flex justify-between text-sm font-bold text-red-600">
-                                    <span>الخصم:</span><span className="font-sans">-{discount} {currency}</span>
+                                    <span>الخصم:</span>
+                                    <span className="font-sans">-{Number(discount).toFixed(2)} {currency}</span>
                                 </div>
                             )}
+                            {taxPreview ? (
+                                displayTaxBreakdown && taxPreview.tax_breakdown?.length > 0
+                                    ? taxPreview.tax_breakdown.map((tax, i) => (
+                                        <div key={i} className="flex justify-between text-sm font-bold opacity-60">
+                                            <span>{tax.name} <span className="font-sans">({tax.rate}%)</span>:</span>
+                                            <span className="font-sans">+{Number(tax.amount).toFixed(2)} {currency}</span>
+                                        </div>
+                                    ))
+                                    : Number(taxPreview.total_tax) > 0 && (
+                                        <div className="flex justify-between text-sm font-bold opacity-60">
+                                            <span>الضريبة:</span>
+                                            <span className="font-sans">+{Number(taxPreview.total_tax).toFixed(2)} {currency}</span>
+                                        </div>
+                                    )
+                            ) : null}
                             <div className="flex justify-between text-xl font-black border-t-2 border-black pt-2">
                                 <span>الإجمالي:</span>
-                                <span className="font-sans">{totalWithDiscount.toFixed(2)} {currency}</span>
+                                <span className="font-sans">
+                                    {taxPreview
+                                        ? Number(taxPreview.total).toFixed(2)
+                                        : totalWithDiscount.toFixed(2)
+                                    } {currency}
+                                </span>
                             </div>
 
                             <div className="border-t border-dashed border-gray-200 pt-2">
