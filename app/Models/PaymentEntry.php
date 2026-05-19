@@ -11,6 +11,7 @@ class PaymentEntry extends Model
     protected $fillable = [
         'invoice_id', 'payment_method_id', 'type', 'amount',
         'reference_number', 'notes', 'processed_by', 'metadata',
+        'cash_register_session_id',
     ];
 
     protected $casts = [
@@ -38,6 +39,11 @@ class PaymentEntry extends Model
     public function processedBy()
     {
         return $this->belongsTo(User::class, 'processed_by');
+    }
+
+    public function cashRegisterSession()
+    {
+        return $this->belongsTo(CashRegisterSession::class);
     }
 
     public function scopePayments($query)

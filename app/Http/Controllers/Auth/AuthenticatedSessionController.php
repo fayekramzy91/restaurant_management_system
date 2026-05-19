@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Auth;
 
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Auth\LoginRequest;
+use App\Services\Audit\AuditLogger;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
@@ -24,7 +25,17 @@ class AuthenticatedSessionController extends Controller
         $request->authenticate();
         $request->session()->regenerate();
 
-        $role = $request->user()->role?->name;
+        $user = $request->user();
+
+        app(AuditLogger::class)->log(
+            'auth.login',
+            $user,
+            [],
+            ['ip' => $request->ip()],
+            "تسجيل دخول: {$user->username}",
+        );
+
+        $role = $user->role?->name;
 
         return match ($role) {
             'kitchen' => redirect()->route('kitchen.index'),
@@ -36,6 +47,18 @@ class AuthenticatedSessionController extends Controller
 
     public function destroy(Request $request): RedirectResponse
     {
+        $user = auth()->user();
+
+        if ($user) {
+            app(AuditLogger::class)->log(
+                'auth.logout',
+                $user,
+                [],
+                [],
+                "تسجيل خروج: {$user->username}",
+            );
+        }
+
         Auth::guard('web')->logout();
         $request->session()->invalidate();
         $request->session()->regenerateToken();

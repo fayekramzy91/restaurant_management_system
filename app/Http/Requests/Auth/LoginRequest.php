@@ -2,6 +2,7 @@
 
 namespace App\Http\Requests\Auth;
 
+use App\Models\AuditLog;
 use Illuminate\Auth\Events\Lockout;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Support\Facades\Auth;
@@ -30,6 +31,15 @@ class LoginRequest extends FormRequest
 
         if (! Auth::attempt(['username' => $this->username, 'password' => $this->password], $this->boolean('remember'))) {
             RateLimiter::hit($this->throttleKey());
+
+            // Direct create — no auth context exists yet so AuditLogger cannot read Auth::id()
+            AuditLog::create([
+                'user_id'     => null,
+                'action'      => 'auth.failed_login',
+                'description' => 'محاولة دخول فاشلة: ' . $this->input('username'),
+                'ip_address'  => $this->ip(),
+                'user_agent'  => $this->userAgent(),
+            ]);
 
             throw ValidationException::withMessages([
                 'username' => trans('auth.failed'),

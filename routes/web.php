@@ -16,9 +16,12 @@ use App\Http\Controllers\Admin\RoleController;
 use App\Http\Controllers\Admin\SettingController;
 use App\Http\Controllers\Admin\TableController;
 use App\Http\Controllers\Admin\TaxRateController;
+use App\Http\Controllers\Admin\AuditLogController;
+use App\Http\Controllers\Admin\ShiftController;
 use App\Http\Controllers\Admin\UserController;
 use App\Http\Controllers\Kitchen\KitchenController;
 use App\Http\Controllers\POS\CustomerController as POSCustomerController;
+use App\Http\Controllers\POS\CashRegisterController;
 use App\Http\Controllers\POS\OrderController;
 use App\Http\Controllers\POS\POSController;
 use App\Http\Controllers\ProfileController;
@@ -130,6 +133,14 @@ Route::middleware('auth')->prefix('admin')->name('admin.')->group(function () {
         Route::resource('roles', RoleController::class)->only(['index', 'store', 'update', 'destroy']);
         Route::post('roles/{role}/permissions', [RoleController::class, 'syncPermissions'])->name('roles.permissions');
     });
+
+    Route::get('audit-log', [AuditLogController::class, 'index'])
+        ->name('audit-log.index')
+        ->middleware('permission:admin.audit_log');
+
+    Route::get('shifts', [ShiftController::class, 'index'])
+        ->name('shifts.index')
+        ->middleware('permission:admin.shifts');
 });
 
 // ── Kitchen ───────────────────────────────────────────────────────────────────
@@ -179,6 +190,13 @@ Route::middleware('auth')->group(function () {
 
     Route::post('/pos/calculate-tax-preview', [POSController::class, 'calculateTaxPreview'])
         ->name('pos.tax-preview');
+
+    // Cash register shift
+    Route::prefix('pos/shift')->name('pos.shift.')->group(function () {
+        Route::get('status',         [CashRegisterController::class, 'status'])->name('status');
+        Route::post('open',          [CashRegisterController::class, 'open'])->name('open');
+        Route::post('close/{session}', [CashRegisterController::class, 'close'])->name('close');
+    });
 
     Route::get('/pos/customers/search', [POSCustomerController::class, 'search'])
         ->middleware('permission:customers.view')

@@ -1,9 +1,10 @@
 import { Head, Link, usePage, router } from '@inertiajs/react';
-import { useState, useMemo, useEffect, useRef } from 'react';
+import { useState, useMemo, useEffect, useRef, useCallback } from 'react';
 import {
     ShoppingBag, Clock, User, RefreshCw, MapPin, Users,
     Plus, LayoutDashboard, ChevronDown, Truck, ShoppingCart,
     Package, Edit3, CreditCard, X, LogOut, Search, SlidersHorizontal,
+    AlertTriangle, CheckCircle, Printer,
 } from 'lucide-react';
 import Modal from '@/Components/Modal';
 
@@ -42,6 +43,83 @@ export default function Index({ areas, orders }) {
 
     /* ── Ready-order notifications ───────────────── */
     const [readyNotices, setReadyNotices] = useState([]);
+
+    // ── Cash register shift ──────────────────────────────────────────────────
+    const [shiftSession,    setShiftSession]    = useState(null);
+    const [shiftLoading,    setShiftLoading]    = useState(true);
+    const [showOpenModal,   setShowOpenModal]   = useState(false);
+    const [showCloseModal,  setShowCloseModal]  = useState(false);
+    const [showZReport,     setShowZReport]     = useState(false);
+    const [openingBalance,  setOpeningBalance]  = useState('');
+    const [actualBalance,   setActualBalance]   = useState('');
+    const [shiftNotes,      setShiftNotes]      = useState('');
+    const [shiftSubmitting, setShiftSubmitting] = useState(false);
+    const [zReport,         setZReport]         = useState(null);
+
+    const csrfToken = () =>
+        decodeURIComponent(
+            document.cookie.split('; ').find(r => r.startsWith('XSRF-TOKEN='))?.split('=')[1] ?? ''
+        );
+
+    // Load shift status on mount
+    useEffect(() => {
+        fetch(route('pos.shift.status'))
+            .then(r => r.json())
+            .then(data => {
+                setShiftSession(data.session ?? null);
+                setShiftLoading(false);
+            })
+            .catch(() => setShiftLoading(false));
+    }, []);
+
+    const openShift = async () => {
+        if (!openingBalance || isNaN(openingBalance)) return;
+        setShiftSubmitting(true);
+        try {
+            const res = await fetch(route('pos.shift.open'), {
+                method:  'POST',
+                headers: { 'Content-Type': 'application/json', 'X-XSRF-TOKEN': csrfToken(), 'Accept': 'application/json' },
+                body:    JSON.stringify({ opening_balance: parseFloat(openingBalance) }),
+            });
+            const data = await res.json();
+            if (data.success) {
+                setShiftSession(data.session);
+                setShowOpenModal(false);
+                setOpeningBalance('');
+            }
+        } finally {
+            setShiftSubmitting(false);
+        }
+    };
+
+    const closeShift = async () => {
+        if (!shiftSession || !actualBalance || isNaN(actualBalance)) return;
+        setShiftSubmitting(true);
+        try {
+            const res = await fetch(route('pos.shift.close', shiftSession.id), {
+                method:  'POST',
+                headers: { 'Content-Type': 'application/json', 'X-XSRF-TOKEN': csrfToken(), 'Accept': 'application/json' },
+                body:    JSON.stringify({ actual_closing_balance: parseFloat(actualBalance), notes: shiftNotes }),
+            });
+            const data = await res.json();
+            if (data.success) {
+                setShiftSession(null);
+                setShowCloseModal(false);
+                setActualBalance('');
+                setShiftNotes('');
+                setZReport(data.z_report);
+                setShowZReport(true);
+            }
+        } finally {
+            setShiftSubmitting(false);
+        }
+    };
+
+    const expectedClosing = shiftSession
+        ? ((parseFloat(shiftSession.opening_balance) || 0) + (parseFloat(shiftSession.cash_received) || 0))
+        : 0;
+
+    const balanceDiff = actualBalance !== '' ? parseFloat(actualBalance) - expectedClosing : null;
     const prevOrdersRef = useRef(orders);
 
     // Request browser notification permission once
@@ -212,6 +290,42 @@ export default function Index({ areas, orders }) {
             </div>
 
             <main className="flex-1 p-6 max-w-screen-2xl mx-auto w-full">
+
+                {/* ── Shift Status Bar ── */}
+                {!shiftLoading && (
+                    shiftSession ? (
+                        <div className="mb-4 flex items-center justify-between bg-green-950/60 border border-green-700/60 rounded-xl px-4 py-2.5 text-green-300 text-sm">
+                            <div className="flex items-center gap-2">
+                                <CheckCircle size={15} className="shrink-0" />
+                                <span className="font-bold">وردية مفتوحة</span>
+                                <span className="text-green-400/70">|</span>
+                                <span>{shiftSession.user?.name}</span>
+                                <span className="text-green-400/70">|</span>
+                                <span className="font-sans">منذ {Math.round(shiftSession.duration_minutes ?? 0)} دقيقة</span>
+                            </div>
+                            <button
+                                onClick={() => setShowCloseModal(true)}
+                                className="bg-red-600 hover:bg-red-700 text-white px-3 py-1.5 rounded-lg text-xs font-black transition-colors"
+                            >
+                                إقفال الوردية
+                            </button>
+                        </div>
+                    ) : (
+                        <div className="mb-4 flex items-center justify-between bg-red-950/60 border border-red-700/60 rounded-xl px-4 py-2.5 text-red-300 text-sm">
+                            <div className="flex items-center gap-2">
+                                <AlertTriangle size={15} className="shrink-0" />
+                                <span className="font-bold">لا توجد وردية مفتوحة</span>
+                                <span className="text-red-400/70 hidden sm:inline">— المدفوعات النقدية غير متاحة</span>
+                            </div>
+                            <button
+                                onClick={() => setShowOpenModal(true)}
+                                className="bg-[#ee1d23] hover:bg-[#6f272a] text-white px-3 py-1.5 rounded-lg text-xs font-black transition-colors"
+                            >
+                                فتح وردية
+                            </button>
+                        </div>
+                    )
+                )}
 
                 {/* ───── Tables Tab ───── */}
                 {activeTab === 'tables' && (
@@ -601,6 +715,206 @@ export default function Index({ areas, orders }) {
                     </div>
                 </div>
             </Modal>
+
+            {/* ── Open Shift Modal ── */}
+            <Modal show={showOpenModal} onClose={() => setShowOpenModal(false)} maxWidth="sm">
+                <div className="p-6 text-right" dir="rtl">
+                    <div className="flex justify-between items-center mb-4">
+                        <button onClick={() => setShowOpenModal(false)} className="p-2 hover:bg-gray-100 rounded-full text-gray-400">
+                            <X size={18} />
+                        </button>
+                        <h2 className="text-lg font-black text-gray-800">فتح وردية الصندوق</h2>
+                    </div>
+                    <div className="space-y-4">
+                        <div>
+                            <label className="block text-sm font-bold text-gray-600 mb-1">رصيد الصندوق الافتتاحي</label>
+                            <input
+                                type="number"
+                                min="0"
+                                step="0.01"
+                                value={openingBalance}
+                                onChange={e => setOpeningBalance(e.target.value)}
+                                placeholder="0.00"
+                                className="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-3 font-sans font-black text-lg focus:ring-2 focus:ring-[#ee1d23] focus:outline-none"
+                                autoFocus
+                            />
+                        </div>
+                        <button
+                            onClick={openShift}
+                            disabled={shiftSubmitting || !openingBalance}
+                            className="w-full bg-[#ee1d23] hover:bg-[#6f272a] text-white py-3.5 rounded-xl font-black text-base transition-colors disabled:opacity-50"
+                        >
+                            {shiftSubmitting ? 'جاري الفتح...' : 'فتح الوردية'}
+                        </button>
+                    </div>
+                </div>
+            </Modal>
+
+            {/* ── Close Shift Modal ── */}
+            <Modal show={showCloseModal} onClose={() => setShowCloseModal(false)} maxWidth="sm">
+                <div className="p-6 text-right" dir="rtl">
+                    <div className="flex justify-between items-center mb-4">
+                        <button onClick={() => setShowCloseModal(false)} className="p-2 hover:bg-gray-100 rounded-full text-gray-400">
+                            <X size={18} />
+                        </button>
+                        <h2 className="text-lg font-black text-gray-800">إقفال الوردية</h2>
+                    </div>
+                    <div className="space-y-4">
+                        <div className="bg-gray-50 rounded-xl p-4 space-y-2 text-sm font-bold">
+                            <div className="flex justify-between text-gray-600">
+                                <span className="font-sans">{(parseFloat(shiftSession?.opening_balance) || 0).toFixed(2)}</span>
+                                <span>الرصيد الافتتاحي</span>
+                            </div>
+                            <div className="flex justify-between text-gray-600">
+                                <span className="font-sans">{(parseFloat(shiftSession?.cash_received) || 0).toFixed(2)}</span>
+                                <span>نقد مستلم</span>
+                            </div>
+                            <div className="flex justify-between font-black text-gray-800 border-t border-gray-200 pt-2">
+                                <span className="font-sans">{expectedClosing.toFixed(2)}</span>
+                                <span>الرصيد المتوقع</span>
+                            </div>
+                        </div>
+
+                        <div>
+                            <label className="block text-sm font-bold text-gray-600 mb-1">الرصيد الفعلي في الصندوق</label>
+                            <input
+                                type="number"
+                                min="0"
+                                step="0.01"
+                                value={actualBalance}
+                                onChange={e => setActualBalance(e.target.value)}
+                                placeholder="0.00"
+                                className="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-3 font-sans font-black text-lg focus:ring-2 focus:ring-[#ee1d23] focus:outline-none"
+                                autoFocus
+                            />
+                        </div>
+
+                        {balanceDiff !== null && (
+                            <div className={`flex justify-between text-sm font-black rounded-xl px-4 py-3 ${balanceDiff === 0 ? 'bg-green-50 text-green-700' : balanceDiff > 0 ? 'bg-blue-50 text-blue-700' : 'bg-red-50 text-red-700'}`}>
+                                <span className="font-sans">{balanceDiff >= 0 ? '+' : ''}{balanceDiff.toFixed(2)}</span>
+                                <span>{balanceDiff === 0 ? 'لا يوجد فرق' : balanceDiff > 0 ? 'فائض' : 'عجز'}</span>
+                            </div>
+                        )}
+
+                        <div>
+                            <label className="block text-sm font-bold text-gray-600 mb-1">ملاحظات (اختياري)</label>
+                            <textarea
+                                value={shiftNotes}
+                                onChange={e => setShiftNotes(e.target.value)}
+                                rows={2}
+                                className="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-3 text-sm font-bold focus:ring-2 focus:ring-[#ee1d23] focus:outline-none resize-none"
+                                placeholder="أي ملاحظات على الوردية..."
+                            />
+                        </div>
+
+                        <button
+                            onClick={closeShift}
+                            disabled={shiftSubmitting || !actualBalance}
+                            className="w-full bg-[#ee1d23] hover:bg-[#6f272a] text-white py-3.5 rounded-xl font-black text-base transition-colors disabled:opacity-50"
+                        >
+                            {shiftSubmitting ? 'جاري الإقفال...' : 'إقفال وطباعة التقرير'}
+                        </button>
+                    </div>
+                </div>
+            </Modal>
+
+            {/* ── Z-Report Modal ── */}
+            <Modal show={showZReport} onClose={() => setShowZReport(false)} maxWidth="lg">
+                <div className="p-6 text-right font-Cairo" dir="rtl" id="z-report-content">
+                    <div className="flex justify-between items-start mb-6 print:hidden">
+                        <div className="flex gap-2">
+                            <button
+                                onClick={() => window.print()}
+                                className="flex items-center gap-2 bg-gray-800 text-white px-4 py-2 rounded-xl font-bold text-sm"
+                            >
+                                <Printer size={15} /> طباعة
+                            </button>
+                            <button
+                                onClick={() => setShowZReport(false)}
+                                className="px-4 py-2 border border-gray-200 rounded-xl font-bold text-sm text-gray-600"
+                            >
+                                إغلاق
+                            </button>
+                        </div>
+                        <h2 className="text-xl font-black text-gray-800">تقرير إقفال الوردية — Z Report</h2>
+                    </div>
+
+                    {zReport && (
+                        <div className="space-y-5">
+                            {/* Session info */}
+                            <div className="bg-gray-50 rounded-xl p-4">
+                                <h3 className="font-black text-gray-700 mb-3 text-sm border-b pb-2">بيانات الوردية</h3>
+                                <div className="grid grid-cols-2 gap-2 text-sm">
+                                    <div className="text-gray-500">الكاشير</div><div className="font-bold">{zReport.session.user}</div>
+                                    <div className="text-gray-500">الفرع</div><div className="font-bold">{zReport.session.branch}</div>
+                                    <div className="text-gray-500">وقت الفتح</div><div className="font-bold font-sans">{new Date(zReport.session.opened_at).toLocaleString('ar-EG')}</div>
+                                    <div className="text-gray-500">وقت الإقفال</div><div className="font-bold font-sans">{new Date(zReport.session.closed_at).toLocaleString('ar-EG')}</div>
+                                    <div className="text-gray-500">مدة الوردية</div><div className="font-bold font-sans">{zReport.session.duration_minutes} دقيقة</div>
+                                </div>
+                            </div>
+
+                            {/* Sales summary */}
+                            <div className="bg-gray-50 rounded-xl p-4">
+                                <h3 className="font-black text-gray-700 mb-3 text-sm border-b pb-2">ملخص المبيعات</h3>
+                                <div className="grid grid-cols-2 gap-2 text-sm mb-3">
+                                    <div className="text-gray-500">إجمالي الطلبات</div>
+                                    <div className="font-bold font-sans">{zReport.sales_summary.total_orders}</div>
+                                    <div className="text-gray-500">إجمالي الإيرادات</div>
+                                    <div className="font-bold font-sans">{Number(zReport.sales_summary.total_revenue).toFixed(2)}</div>
+                                </div>
+                                {zReport.sales_summary.by_payment_method?.length > 0 && (
+                                    <div className="space-y-1">
+                                        {zReport.sales_summary.by_payment_method.map((m, i) => (
+                                            <div key={i} className="flex justify-between text-sm">
+                                                <span className="font-sans">{m.count} فاتورة — {Number(m.total).toFixed(2)}</span>
+                                                <span className="font-bold">{m.method_name}</span>
+                                            </div>
+                                        ))}
+                                    </div>
+                                )}
+                            </div>
+
+                            {/* Cash summary */}
+                            <div className="bg-gray-50 rounded-xl p-4">
+                                <h3 className="font-black text-gray-700 mb-3 text-sm border-b pb-2">ملخص الصندوق</h3>
+                                <div className="space-y-2 text-sm">
+                                    {[
+                                        ['الرصيد الافتتاحي',   zReport.cash_summary.opening_balance],
+                                        ['نقد مستلم',          zReport.cash_summary.cash_received],
+                                        ['الرصيد المتوقع',     zReport.cash_summary.expected_closing],
+                                        ['الرصيد الفعلي',      zReport.cash_summary.actual_closing],
+                                    ].map(([label, val]) => (
+                                        <div key={label} className="flex justify-between">
+                                            <span className="font-sans font-bold">{Number(val).toFixed(2)}</span>
+                                            <span className="text-gray-600">{label}</span>
+                                        </div>
+                                    ))}
+                                    <div className={`flex justify-between font-black border-t pt-2 ${zReport.cash_summary.difference >= 0 ? 'text-green-700' : 'text-red-700'}`}>
+                                        <span className="font-sans">{zReport.cash_summary.difference >= 0 ? '+' : ''}{Number(zReport.cash_summary.difference).toFixed(2)}</span>
+                                        <span>الفرق</span>
+                                    </div>
+                                </div>
+                            </div>
+
+                            {/* Tax summary */}
+                            {zReport.tax_summary?.length > 0 && (
+                                <div className="bg-gray-50 rounded-xl p-4">
+                                    <h3 className="font-black text-gray-700 mb-3 text-sm border-b pb-2">الضرائب</h3>
+                                    <div className="space-y-1 text-sm">
+                                        {zReport.tax_summary.map((t, i) => (
+                                            <div key={i} className="flex justify-between">
+                                                <span className="font-sans font-bold">{Number(t.tax_amount).toFixed(2)}</span>
+                                                <span className="text-gray-700">{t.tax_name}</span>
+                                            </div>
+                                        ))}
+                                    </div>
+                                </div>
+                            )}
+                        </div>
+                    )}
+                </div>
+            </Modal>
+
         </div>
     );
 }

@@ -17,6 +17,7 @@ use App\Models\Order;
 use App\Models\PaymentMethod;
 use App\Models\Setting;
 use App\Models\Table;
+use App\Models\CashRegisterSession;
 use App\Models\WalletTransaction;
 use App\Services\InvoiceItemSnapshotter;
 use App\Services\Tax\TaxCalculator;
@@ -122,6 +123,30 @@ class POSController extends Controller
             ]);
         }
 
+        // ── C2: Guard — cash payments require an open shift ───────────────
+        $paymentIds = collect($request->input('payments', []))
+            ->pluck('payment_method_id')
+            ->filter();
+
+        $hasCashPayment = $paymentIds->isNotEmpty()
+            && PaymentMethod::whereIn('id', $paymentIds)
+                ->where('type', 'cash')
+                ->exists();
+
+        $openSession = null;
+
+        if ($hasCashPayment) {
+            $openSession = CashRegisterSession::where('user_id', auth()->id())
+                ->where('status', 'open')
+                ->first();
+
+            if (! $openSession) {
+                return back()->withErrors([
+                    'error' => 'يجب فتح وردية الصندوق أولاً قبل استقبال مدفوعات نقدية',
+                ]);
+            }
+        }
+
         $validated = $request->validate([
             'payments'                     => 'array',
             'payments.*.payment_method_id' => 'required|exists:payment_methods,id',
@@ -143,7 +168,7 @@ class POSController extends Controller
         $totalWithDiscount = max(0, $order->total_amount - $discount);
         $totalPaid         = 0;
 
-        DB::transaction(function () use ($order, $validated, $discount, $totalWithDiscount, &$totalPaid) {
+        DB::transaction(function () use ($order, $validated, $discount, $totalWithDiscount, &$totalPaid, $hasCashPayment, $openSession) {
             // ── Resolve / create customer ──────────────────────────────────
             $customer = null;
 
@@ -275,11 +300,15 @@ class POSController extends Controller
             if (!empty($validated['payments'])) {
                 foreach ($validated['payments'] as $payment) {
                     if ($payment['amount'] > 0) {
+                        $isCash = $hasCashPayment
+                            && PaymentMethod::find($payment['payment_method_id'])?->type === 'cash';
+
                         $invoice->paymentEntries()->create([
-                            'payment_method_id' => $payment['payment_method_id'],
-                            'type'              => 'payment',
-                            'amount'            => $payment['amount'],
-                            'processed_by'      => Auth::id(),
+                            'payment_method_id'        => $payment['payment_method_id'],
+                            'type'                     => 'payment',
+                            'amount'                   => $payment['amount'],
+                            'processed_by'             => Auth::id(),
+                            'cash_register_session_id' => $isCash ? $openSession?->id : null,
                         ]);
                         $totalPaid  += (float) $payment['amount'];
                         $methodName  = PaymentMethod::find($payment['payment_method_id'])?->name ?? '—';

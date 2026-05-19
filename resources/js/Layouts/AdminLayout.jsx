@@ -3,7 +3,7 @@ import { useState } from 'react';
 import {
     LayoutDashboard, Store, Tag, Utensils, Map, LayoutGrid,
     ShoppingCart, Settings, LogOut, ChevronLeft, Users, UserCog, ShieldCheck,
-    BarChart2, ReceiptText, Percent,
+    BarChart2, ReceiptText, Percent, Shield, Clock,
 } from 'lucide-react';
 import { Avatar, AvatarFallback } from '@/Components/ui/avatar';
 import { Separator } from '@/Components/ui/separator';
@@ -24,6 +24,8 @@ const NAV_ITEMS = [
     { name: 'الأدوار والصلاحيات', icon: ShieldCheck,    route: 'admin.roles.index',     active: 'admin.roles.*',        permission: 'admin.roles' },
     { name: 'الضرائب',           icon: Percent,         route: 'admin.taxes.index',     active: 'admin.taxes.*',        permission: 'admin.taxes' },
     { name: 'الإعدادات',         icon: Settings,        route: 'admin.settings.index',  active: 'admin.settings.*',     permission: 'admin.settings' },
+    { name: 'الورديات',           icon: Clock,           route: 'admin.shifts.index',    active: 'admin.shifts.*',       permission: 'admin.shifts' },
+    { name: 'سجل المراقبة',      icon: Shield,          route: 'admin.audit-log.index', active: 'admin.audit-log.*',    permission: 'admin.audit_log' },
 ];
 
 export default function AdminLayout({ children, title }) {

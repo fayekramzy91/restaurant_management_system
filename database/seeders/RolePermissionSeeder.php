@@ -53,6 +53,8 @@ class RolePermissionSeeder extends Seeder
             ['key' => 'admin.settings',   'display_name' => 'إدارة الإعدادات'],
             ['key' => 'admin.users',      'display_name' => 'إدارة المستخدمين'],
             ['key' => 'admin.roles',      'display_name' => 'إدارة الأدوار والصلاحيات'],
+            ['key' => 'admin.audit_log',  'display_name' => 'سجل المراقبة'],
+            ['key' => 'admin.shifts',     'display_name' => 'ورديات الصندوق'],
         ],
     ];
 
