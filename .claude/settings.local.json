@@ -3,7 +3,9 @@
     "allow": [
       "Bash(npm run *)",
       "Bash(php artisan *)",
-      "Bash(grep -n \"TaxRate\\\\|taxes\\\\b\" /Applications/MAMP/htdocs/restaurant_management_system/routes/web.php | head -10)"
+      "Bash(grep -n \"TaxRate\\\\|taxes\\\\b\" /Applications/MAMP/htdocs/restaurant_management_system/routes/web.php | head -10)",
+      "Bash(cd /Applications/MAMP/htdocs/restaurant_management_system && php artisan test 2>&1)",
+      "Bash(2>&1)"
     ]
   },
   "enableAllProjectMcpServers": true,

@@ -1,7 +1,6 @@
 # Tax Engine — Technical Reference
 
-**Branch:** `claude/pedantic-joliot-2aab98`
-**Last updated:** 2026-05-13
+**Last updated:** 2026-05-18
 
 ---
 
@@ -186,6 +185,78 @@ The `invoice_taxes.tax_rate_id` FK is defined with `onDelete('set null')`. A **h
 
 ### 5. No multi-currency tax
 All tax amounts are calculated in the restaurant's single base currency. There is no per-currency tax configuration.
+
+### 6. Discount applied after tax
+The discount field in checkout is subtracted from `totalAfterTax`, not from the taxable base. Tax is always computed on the full item price. See "Discount Handling" below.
+
+---
+
+## Discount Handling
+
+> ⚠️ **Tax is calculated BEFORE discount.** The discount reduces the final invoice total, not the taxable base.
+
+```
+invoiceTotal = max(0, taxResult->totalAfterTax - discount)
+```
+
+Example: item=100, service_tax=10%, discount=20
+```
+subtotal  = 100
+tax       = 100 × 10% = 10.00    ← tax on full 100, not on 80
+after_tax = 110.00
+total     = 110.00 - 20.00 = 90.00
+
+invoice.subtotal   = 100.00
+invoice.tax_amount = 10.00
+invoice.discount   = 20.00
+invoice.total      = 90.00
+```
+
+---
+
+## Files Modified / Created
+
+### New files
+
+| File | Description |
+|---|---|
+| `app/Services/Tax/TaxCalculator.php` | Core calculation engine (pure, no DB writes) |
+| `app/Services/Tax/TaxCalculationResult.php` | Immutable DTO returned by TaxCalculator |
+| `app/Services/InvoiceItemSnapshotter.php` | Writes `invoice_items` + `invoice_item_taxes` atomically |
+| `app/Models/TaxRate.php` | TaxRate Eloquent model with soft-delete |
+| `app/Models/InvoiceTax.php` | Immutable invoice-level tax ledger row (`UPDATED_AT = null`) |
+| `app/Models/InvoiceItemTax.php` | Immutable item-level tax ledger row |
+| `app/Http/Controllers/Admin/TaxRateController.php` | CRUD: index, store, update, destroy |
+| `resources/js/Pages/Admin/Taxes/Index.jsx` | Admin tax management UI |
+| `database/migrations/2026_05_08_000001_create_tax_rates_table.php` | |
+| `database/migrations/2026_05_08_000002_create_menu_item_tax_rates_table.php` | |
+| `database/migrations/2026_05_08_000003_create_invoice_taxes_table.php` | |
+| `database/migrations/2026_05_08_000004_create_invoice_item_taxes_table.php` | |
+| `database/migrations/2026_05_08_000005_add_tax_columns_to_existing_tables.php` | |
+| `tests/Unit/Tax/TaxCalculatorTest.php` | 18 unit tests |
+| `tests/Feature/Tax/InvoiceTaxIntegrationTest.php` | 8 HTTP integration tests |
+| `tests/Feature/Tax/PaymentWithTaxTest.php` | 9 payment flow feature tests |
+| `tests/Feature/Tax/TaxCalculatorEdgeCaseTest.php` | 4 edge-case feature tests |
+| `tests/Feature/Admin/TaxRateManagementTest.php` | 5 admin CRUD feature tests |
+| `docs/TAX_ENGINE.md` | This document |
+
+### Modified files
+
+| File | Change |
+|---|---|
+| `app/Http/Controllers/POS/POSController.php` | `processPayment()` calls TaxCalculator, creates InvoiceTax rows, tax-aware invoice totals. Added `calculateTaxPreview()` |
+| `app/Http/Controllers/Admin/InvoiceController.php` | `show()` eager-loads `taxes`, passes `displayTaxBreakdown` setting |
+| `app/Http/Controllers/Admin/MenuItemController.php` | `store()`/`update()` sync `tax_rate_ids`; auto-assign `is_default` rates |
+| `app/Http/Controllers/Admin/SettingController.php` | Validates and saves `tax.*` settings |
+| `app/Models/MenuItem.php` | `taxRates()` relationship, `is_tax_exempt` cast |
+| `resources/js/Pages/Admin/Settings/Index.jsx` | "إعدادات الضرائب" section with 6 controls |
+| `resources/js/Pages/Admin/MenuItems/Index.jsx` | Tax-exempt toggle + per-rate checkboxes in modal |
+| `resources/js/Pages/Admin/Invoices/Show.jsx` | Per-tax breakdown lines in financial summary |
+| `resources/js/Pages/POS/Checkout.jsx` | Live tax preview via `pos.tax-preview`; receipt tax breakdown |
+| `resources/js/Layouts/AdminLayout.jsx` | Sidebar version badge |
+| `package.json` | `"version": "1.0.0"` |
+| `vite.config.js` | `__APP_VERSION__` build-time injection |
+| `routes/web.php` | Tax resource routes + `pos/calculate-tax-preview` |
 
 ---
 

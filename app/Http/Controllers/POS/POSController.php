@@ -227,6 +227,21 @@ class POSController extends Controller
                 foreach ($taxResult->toInvoiceTaxesData() as $taxData) {
                     InvoiceTax::create(array_merge($taxData, ['invoice_id' => $invoice->id]));
                 }
+
+                if ($taxResult->totalTax > 0) {
+                    $order->logEvent('invoice_tax_applied',
+                        "تم احتساب ضريبة بقيمة {$taxResult->totalTax}",
+                        [
+                            'total_tax' => $taxResult->totalTax,
+                            'breakdown' => $taxResult->invoiceTaxes->values()
+                                ->map(fn ($t) => [
+                                    'name'   => $t['tax_name'],
+                                    'rate'   => $t['rate'],
+                                    'amount' => $t['tax_amount'],
+                                ])->toArray(),
+                        ]
+                    );
+                }
             } else {
                 // Re-checkout: update discount/total only (no tax recalculation)
                 $invoice->update([
@@ -270,7 +285,13 @@ class POSController extends Controller
                         $methodName  = PaymentMethod::find($payment['payment_method_id'])?->name ?? '—';
                         $order->logEvent('payment_processed',
                             "تم استلام {$payment['amount']} عبر {$methodName}",
-                            ['method' => $methodName, 'amount' => $payment['amount']]
+                            [
+                                'method'            => $methodName,
+                                'payment_method_id' => $payment['payment_method_id'],
+                                'amount'            => $payment['amount'],
+                                'invoice_id'        => $invoice->id,
+                                'invoice_number'    => $invoice->invoice_number,
+                            ]
                         );
                     }
                 }
@@ -327,7 +348,17 @@ class POSController extends Controller
             $invoice->refresh();
             $order->logEvent('order_completed',
                 'تم إغلاق الطلب',
-                ['invoice_status' => $invoice->status, 'total_paid' => $effectivePaid]
+                [
+                    'invoice_id'     => $invoice->id,
+                    'invoice_number' => $invoice->invoice_number,
+                    'invoice_status' => $invoice->status,
+                    'subtotal'       => $invoice->subtotal,
+                    'tax_amount'     => $invoice->tax_amount,
+                    'discount'       => $invoice->discount,
+                    'total'          => $invoice->total,
+                    'total_paid'     => $effectivePaid,
+                    'wallet_used'    => $walletUsed,
+                ]
             );
 
             if ($order->table_id) {

@@ -7,6 +7,7 @@ import {
     Utensils, Clock, CheckCircle2, CircleOff, BadgeCheck,
     CircleDashed, Truck, Package, Users, Star, GitBranch,
     ReceiptText, RotateCcw, Minus, AlertCircle,
+    UserCheck, Wallet, Receipt, XCircle,
 } from 'lucide-react';
 import { Card, CardContent } from '@/Components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/Components/ui/table';
@@ -54,6 +55,13 @@ const TIMELINE_MAP = {
     notes_updated:     { icon: FileText,     color: 'bg-slate-400' },
     invoice_created:   { icon: ReceiptText,  color: 'bg-emerald-400' },
     refund_processed:  { icon: RotateCcw,    color: 'bg-blue-400' },
+    customer_linked:   { icon: UserCheck,    color: 'bg-blue-400' },
+    wallet_used:       { icon: Wallet,       color: 'bg-purple-400' },
+    wallet_credited:   { icon: Wallet,       color: 'bg-green-400' },
+    kitchen_started:   { icon: ChefHat,      color: 'bg-orange-400' },
+    payment_entry_added: { icon: CreditCard, color: 'bg-emerald-400' },
+    invoice_tax_applied: { icon: Receipt,    color: 'bg-yellow-400' },
+    invoice_voided:    { icon: XCircle,      color: 'bg-red-400' },
 };
 
 /* ── Pill badge ─────────────────────────────────── */
