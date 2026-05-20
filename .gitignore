@@ -26,3 +26,34 @@ Homestead.yaml
 Thumbs.db
 # Added by code-review-graph
 .code-review-graph/
+
+# ── SSH keys & certificates ──────────────────────────────────────────────────
+id_rsa
+id_rsa.pub
+id_ed25519
+id_ed25519.pub
+id_ecdsa
+id_ecdsa.pub
+id_dsa
+id_dsa.pub
+id_ed25519_personal
+id_ed25519_personal.pub
+*.pem
+*.p12
+*.pfx
+*.cer
+*.cert
+*.jks
+
+# ── Secrets & credentials ────────────────────────────────────────────────────
+.env.local
+.env.staging
+.env.*.local
+secrets.json
+secrets.yaml
+secrets.yml
+.secrets
+credentials.json
+service-account.json
+*-service-account.json
+*.credentials
