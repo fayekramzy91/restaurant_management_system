@@ -45,6 +45,13 @@ id_ed25519_personal.pub
 *.cert
 *.jks
 
+# ── Claude Code local artifacts ──────────────────────────────────────────────
+.claude/settings.local.json
+.claude/worktrees/
+
+# ── Temporary / debug files ───────────────────────────────────────────────────
+build_error*.txt
+
 # ── Secrets & credentials ────────────────────────────────────────────────────
 .env.local
 .env.staging
