@@ -35,6 +35,77 @@ class CustomerController extends Controller
     }
 
     /**
+     * Customer detail — stats, recent orders, wallet ledger.
+     * GET /admin/customers/{customer}
+     */
+    public function show(Customer $customer): \Inertia\Response
+    {
+        // ── Invoice stats ─────────────────────────────────────────────────────
+        $invoiceStats = Invoice::where('customer_id', $customer->id)
+            ->whereIn('status', ['paid', 'partial'])
+            ->selectRaw('
+                COUNT(*)            AS invoice_count,
+                SUM(total)          AS total_spent,
+                SUM(tax_amount)     AS total_tax,
+                SUM(discount)       AS total_discount,
+                MAX(issued_at)      AS last_visit,
+                MIN(issued_at)      AS first_visit
+            ')
+            ->first();
+
+        // ── Recent 5 orders ───────────────────────────────────────────────────
+        $recentOrders = $customer->orders()
+            ->with('invoice:id,order_id,invoice_number,total,status,issued_at')
+            ->latest()
+            ->limit(5)
+            ->get()
+            ->map(fn ($order) => [
+                'id'           => $order->id,
+                'order_type'   => $order->order_type,
+                'status'       => $order->status,
+                'created_at'   => $order->created_at,
+                'invoice'      => $order->invoice ? [
+                    'invoice_number' => $order->invoice->invoice_number,
+                    'total'          => $order->invoice->total,
+                    'status'         => $order->invoice->status,
+                    'issued_at'      => $order->invoice->issued_at,
+                ] : null,
+            ]);
+
+        // ── Wallet transactions (paginated) ───────────────────────────────────
+        $walletTransactions = $customer->walletTransactions()
+            ->with('createdBy:id,name')
+            ->latest('created_at')
+            ->paginate(10)
+            ->withQueryString();
+
+        $walletTransactions->getCollection()->transform(function ($tx) {
+            $tx->reference_label = null;
+            if ($tx->reference_type === Invoice::class) {
+                $tx->reference_label = Invoice::find($tx->reference_id)?->invoice_number;
+            }
+            return $tx;
+        });
+
+        return Inertia::render('Admin/Customers/Show', [
+            'customer' => $customer->only([
+                'id', 'name', 'phone', 'email', 'address',
+                'wallet_balance', 'wallet_last_updated_at', 'created_at',
+            ]),
+            'stats' => [
+                'invoice_count'  => (int)   ($invoiceStats->invoice_count  ?? 0),
+                'total_spent'    => (float)  ($invoiceStats->total_spent    ?? 0),
+                'total_tax'      => (float)  ($invoiceStats->total_tax      ?? 0),
+                'total_discount' => (float)  ($invoiceStats->total_discount ?? 0),
+                'last_visit'     => $invoiceStats->last_visit  ?? null,
+                'first_visit'    => $invoiceStats->first_visit ?? null,
+            ],
+            'recentOrders'       => $recentOrders,
+            'walletTransactions' => $walletTransactions,
+        ]);
+    }
+
+    /**
      * Wallet transaction history for a customer.
      * GET /admin/customers/{customer}/wallet
      */

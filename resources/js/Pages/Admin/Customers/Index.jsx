@@ -1,6 +1,6 @@
 import AdminLayout from '@/Layouts/AdminLayout';
 import { Head, Link, usePage } from '@inertiajs/react';
-import { Users, Phone, Mail, MapPin, ShoppingBag, Wallet } from 'lucide-react';
+import { Users, Phone, Mail, MapPin, ShoppingBag, Wallet, Eye } from 'lucide-react';
 import { Card } from '@/Components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/Components/ui/table';
 import { cn } from '@/lib/utils';
@@ -31,7 +31,7 @@ export default function Index({ customers }) {
                             <TableHead className="text-start text-xs font-semibold text-slate-400 uppercase tracking-wide">إجمالي الإنفاق</TableHead>
                             <TableHead className="text-start text-xs font-semibold text-slate-400 uppercase tracking-wide">رصيد المحفظة</TableHead>
                             <TableHead className="text-xs font-semibold text-slate-400 uppercase tracking-wide">آخر طلب</TableHead>
-                            <TableHead className="w-10"></TableHead>
+                            <TableHead className="w-24"></TableHead>
                         </TableRow>
                     </TableHeader>
                     <TableBody>
@@ -43,7 +43,12 @@ export default function Index({ customers }) {
                                             {customer.name.charAt(0)}
                                         </div>
                                         <div>
-                                            <p className="font-semibold text-slate-700 text-sm">{customer.name}</p>
+                                            <Link
+                                                href={route('admin.customers.show', customer.id)}
+                                                className="font-semibold text-slate-700 text-sm hover:text-[#ee1d23] transition-colors"
+                                            >
+                                                {customer.name}
+                                            </Link>
                                             {customer.email && (
                                                 <p className="text-[11px] text-slate-400 flex items-center gap-1 mt-0.5">
                                                     <Mail size={10} /> {customer.email}
@@ -93,14 +98,24 @@ export default function Index({ customers }) {
                                     }
                                 </TableCell>
                                 <TableCell>
-                                    <Link
-                                        href={route('admin.customers.wallet', customer.id)}
-                                        className="inline-flex items-center gap-1 text-[11px] font-bold text-slate-500 hover:text-[#ee1d23] border border-slate-200 hover:border-[#ee1d23] rounded-md px-2 py-1 transition-colors"
-                                        title="عرض المحفظة"
-                                    >
-                                        <Wallet size={11} />
-                                        المحفظة
-                                    </Link>
+                                    <div className="flex items-center gap-1.5">
+                                        <Link
+                                            href={route('admin.customers.show', customer.id)}
+                                            className="inline-flex items-center gap-1 text-[11px] font-bold text-slate-500 hover:text-[#ee1d23] border border-slate-200 hover:border-[#ee1d23] rounded-md px-2 py-1 transition-colors"
+                                            title="عرض التفاصيل"
+                                        >
+                                            <Eye size={11} />
+                                            تفاصيل
+                                        </Link>
+                                        <Link
+                                            href={route('admin.customers.wallet', customer.id)}
+                                            className="inline-flex items-center gap-1 text-[11px] font-bold text-slate-500 hover:text-[#ee1d23] border border-slate-200 hover:border-[#ee1d23] rounded-md px-2 py-1 transition-colors"
+                                            title="عرض المحفظة"
+                                        >
+                                            <Wallet size={11} />
+                                            المحفظة
+                                        </Link>
+                                    </div>
                                 </TableCell>
                             </TableRow>
                         ))}

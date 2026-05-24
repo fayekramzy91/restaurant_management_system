@@ -111,6 +111,10 @@ Route::middleware('auth')->prefix('admin')->name('admin.')->group(function () {
         ->middleware('permission:customers.view')
         ->name('customers.index');
 
+    Route::get('customers/{customer}', [AdminCustomerController::class, 'show'])
+        ->middleware('permission:customers.view')
+        ->name('customers.show');
+
     Route::get('customers/{customer}/wallet', [AdminCustomerController::class, 'wallet'])
         ->middleware('permission:customers.view')
         ->name('customers.wallet');
