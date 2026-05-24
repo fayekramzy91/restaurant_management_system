@@ -1,10 +1,8 @@
 import AdminLayout from '@/Layouts/AdminLayout';
-import { Head, router, usePage } from '@inertiajs/react';
-import { useState } from 'react';
-import { BarChart2, TrendingUp, ShoppingCart, Users, DollarSign, Package } from 'lucide-react';
+import ReportDateFilter from '@/Components/Admin/ReportDateFilter';
+import { Head, usePage } from '@inertiajs/react';
+import { BarChart2, TrendingUp, ShoppingCart, Users, DollarSign, Package, Receipt, Tag, CreditCard } from 'lucide-react';
 import { Card, CardContent } from '@/Components/ui/card';
-import { Button } from '@/Components/ui/button';
-import { Input } from '@/Components/ui/input';
 import {
     Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from '@/Components/ui/table';
@@ -34,82 +32,6 @@ function formatCurrency(value, currency = 'ILS') {
     return `${Number(value).toFixed(2)} ${symbol}`;
 }
 
-const PRESETS = [
-    { key: 'today',     label: 'اليوم' },
-    { key: 'yesterday', label: 'أمس' },
-    { key: 'last_7',    label: 'آخر 7 أيام' },
-    { key: 'last_30',   label: 'آخر 30 يوماً' },
-    { key: 'custom',    label: 'مخصص' },
-];
-
-function DateRangeFilter({ filters }) {
-    const [preset,   setPreset]   = useState(filters.preset    ?? 'today');
-    const [dateFrom, setDateFrom] = useState(filters.date_from ?? '');
-    const [dateTo,   setDateTo]   = useState(filters.date_to   ?? '');
-
-    const apply = (overrides = {}) => {
-        const p = { preset, date_from: dateFrom, date_to: dateTo, ...overrides };
-        if (p.preset !== 'custom') {
-            delete p.date_from;
-            delete p.date_to;
-        }
-        router.get(route('admin.reports.dashboard'), p, { preserveState: true, replace: true });
-    };
-
-    const handlePreset = (key) => {
-        setPreset(key);
-        if (key !== 'custom') apply({ preset: key });
-    };
-
-    return (
-        <Card className="shadow-sm border-slate-200/80 mb-5">
-            <CardContent className="p-4">
-                <div className="flex flex-wrap gap-2 items-center">
-                    {PRESETS.map(({ key, label }) => (
-                        <Button
-                            key={key}
-                            variant={preset === key ? 'default' : 'outline'}
-                            size="sm"
-                            className={cn(
-                                'h-8 text-xs',
-                                preset === key && 'bg-[#ee1d23] border-[#ee1d23] hover:bg-[#c91920] text-white'
-                            )}
-                            onClick={() => handlePreset(key)}
-                        >
-                            {label}
-                        </Button>
-                    ))}
-
-                    {preset === 'custom' && (
-                        <div className="flex gap-2 items-center me-2">
-                            <Input
-                                type="date"
-                                value={dateFrom}
-                                onChange={e => setDateFrom(e.target.value)}
-                                className="h-8 text-xs w-36 border-slate-200"
-                            />
-                            <span className="text-xs text-slate-400">—</span>
-                            <Input
-                                type="date"
-                                value={dateTo}
-                                onChange={e => setDateTo(e.target.value)}
-                                className="h-8 text-xs w-36 border-slate-200"
-                            />
-                            <Button
-                                size="sm"
-                                className="h-8 text-xs bg-[#ee1d23] hover:bg-[#c91920] text-white"
-                                onClick={() => apply({ preset: 'custom', date_from: dateFrom, date_to: dateTo })}
-                                disabled={!dateFrom || !dateTo}
-                            >
-                                تطبيق
-                            </Button>
-                        </div>
-                    )}
-                </div>
-            </CardContent>
-        </Card>
-    );
-}
 
 function KpiCard({ label, value, icon: Icon, iconCls, sub }) {
     return (
@@ -127,6 +49,23 @@ function KpiCard({ label, value, icon: Icon, iconCls, sub }) {
                 {sub && <p className="mt-1.5 text-[11px] text-slate-400 font-semibold">{sub}</p>}
             </CardContent>
         </Card>
+    );
+}
+
+function RevenueChartTooltip({ active, payload, label, currency }) {
+    if (!active || !payload?.length) return null;
+    const d = payload[0]?.payload ?? {};
+    return (
+        <div className="bg-white border border-slate-200 rounded-lg shadow-md p-3 text-xs font-Cairo" dir="rtl">
+            <p className="font-bold text-slate-600 mb-1.5">{label}</p>
+            <p className="text-[#ee1d23]">الإيراد: {formatCurrency(d.revenue ?? 0, currency)}</p>
+            {(d.tax ?? 0) > 0 && (
+                <p className="text-amber-500">الضريبة: {formatCurrency(d.tax, currency)}</p>
+            )}
+            {(d.discount ?? 0) > 0 && (
+                <p className="text-violet-500">الخصم: {formatCurrency(d.discount, currency)}</p>
+            )}
+        </div>
     );
 }
 
@@ -168,10 +107,7 @@ function RevenueChart({ data, currency }) {
                                 tickFormatter={v => v.toFixed(0)}
                                 width={50}
                             />
-                            <Tooltip
-                                formatter={v => [formatCurrency(v, currency), 'الإيرادات']}
-                                contentStyle={{ fontSize: 12, fontFamily: 'Cairo, sans-serif', borderRadius: 8, border: '1px solid #e2e8f0' }}
-                            />
+                            <Tooltip content={<RevenueChartTooltip currency={currency} />} />
                             <Bar dataKey="revenue" fill="#ee1d23" radius={[4, 4, 0, 0]} maxBarSize={40} />
                         </BarChart>
                     </ResponsiveContainer>
@@ -356,6 +292,78 @@ function BranchTable({ branches, currency }) {
     );
 }
 
+const METHOD_TYPE_LABELS = { cash: 'نقداً', card: 'بطاقة', wallet: 'محفظة', other: 'أخرى' };
+const METHOD_TYPE_COLORS = { cash: '#10b981', card: '#3b82f6', wallet: '#feca0b', other: '#94a3b8' };
+
+function PaymentBreakdown({ data, currency }) {
+    const total = data.reduce((sum, r) => sum + r.total_amount, 0);
+
+    return (
+        <Card className="shadow-sm border-slate-200/80 overflow-hidden">
+            <div className="px-5 py-4 border-b border-slate-100 flex items-center gap-3">
+                <div className="w-8 h-8 bg-blue-50 text-blue-500 rounded-lg flex items-center justify-center shrink-0">
+                    <CreditCard size={15} />
+                </div>
+                <h3 className="font-semibold text-slate-700 text-sm">توزيع طرق الدفع</h3>
+            </div>
+            {data.length === 0 ? (
+                <div className="h-28 flex items-center justify-center text-slate-300 text-sm font-semibold">
+                    لا توجد مدفوعات في هذه الفترة
+                </div>
+            ) : (
+                <>
+                    {/* Progress bar */}
+                    <div className="flex h-2 mx-5 mt-4 rounded-full overflow-hidden gap-0.5">
+                        {data.map((row) => (
+                            <div
+                                key={row.method_name}
+                                style={{
+                                    width: `${total > 0 ? (row.total_amount / total) * 100 : 0}%`,
+                                    backgroundColor: METHOD_TYPE_COLORS[row.method_type] ?? '#94a3b8',
+                                }}
+                                title={row.method_name}
+                            />
+                        ))}
+                    </div>
+                    <Table>
+                        <TableHeader>
+                            <TableRow className="bg-slate-50/60 hover:bg-slate-50/60 border-slate-100">
+                                <TableHead className="text-xs font-semibold text-slate-400">طريقة الدفع</TableHead>
+                                <TableHead className="text-center text-xs font-semibold text-slate-400">عدد العمليات</TableHead>
+                                <TableHead className="text-xs font-semibold text-slate-400 text-start">الإجمالي</TableHead>
+                            </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                            {data.map((row) => (
+                                <TableRow key={row.method_name} className="border-slate-100 hover:bg-slate-50/50">
+                                    <TableCell className="font-semibold text-sm text-slate-700">
+                                        <div className="flex items-center gap-2">
+                                            <span
+                                                className="w-2 h-2 rounded-full shrink-0"
+                                                style={{ backgroundColor: METHOD_TYPE_COLORS[row.method_type] ?? '#94a3b8' }}
+                                            />
+                                            {row.method_name}
+                                            <span className="text-[10px] text-slate-400 font-normal">
+                                                ({METHOD_TYPE_LABELS[row.method_type] ?? row.method_type})
+                                            </span>
+                                        </div>
+                                    </TableCell>
+                                    <TableCell className="text-center font-sans font-semibold text-slate-600">
+                                        {row.transaction_count}
+                                    </TableCell>
+                                    <TableCell className="text-start font-sans font-semibold text-slate-700">
+                                        {formatCurrency(row.total_amount, currency)}
+                                    </TableCell>
+                                </TableRow>
+                            ))}
+                        </TableBody>
+                    </Table>
+                </>
+            )}
+        </Card>
+    );
+}
+
 export default function Dashboard({
     filters,
     kpi,
@@ -364,6 +372,7 @@ export default function Dashboard({
     type_breakdown,
     top_items,
     branch_performance,
+    payment_breakdown,
 }) {
     const { settings } = usePage().props;
     const currency = settings?.currency ?? 'ILS';
@@ -372,9 +381,9 @@ export default function Dashboard({
         <AdminLayout title="التقارير">
             <Head title="التقارير" />
 
-            <DateRangeFilter filters={filters} />
+            <ReportDateFilter filters={filters} routeName="admin.reports.dashboard" />
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-5">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-4 mb-5">
                 <KpiCard
                     label="إجمالي الإيرادات"
                     value={formatCurrency(kpi.total_revenue, currency)}
@@ -382,16 +391,29 @@ export default function Dashboard({
                     iconCls="bg-red-50 text-[#ee1d23]"
                 />
                 <KpiCard
+                    label="إجمالي الضريبة المحصّلة"
+                    value={formatCurrency(kpi.total_tax, currency)}
+                    icon={Receipt}
+                    iconCls="bg-amber-50 text-amber-500"
+                />
+                <KpiCard
+                    label="إجمالي الخصومات"
+                    value={formatCurrency(kpi.total_discount, currency)}
+                    icon={Tag}
+                    iconCls="bg-violet-50 text-violet-500"
+                />
+                <KpiCard
                     label="إجمالي الطلبات"
                     value={kpi.total_orders}
                     icon={ShoppingCart}
                     iconCls="bg-blue-50 text-blue-500"
+                    sub={`${kpi.completed_orders} مكتمل`}
                 />
                 <KpiCard
                     label="متوسط قيمة الطلب"
                     value={formatCurrency(kpi.avg_order_value, currency)}
                     icon={TrendingUp}
-                    iconCls="bg-amber-50 text-amber-500"
+                    iconCls="bg-slate-100 text-slate-500"
                     sub="للطلبات المكتملة فقط"
                 />
                 <KpiCard
@@ -415,10 +437,12 @@ export default function Dashboard({
                 </div>
             </div>
 
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-4">
                 <TopItemsTable items={top_items} currency={currency} />
                 <BranchTable branches={branch_performance} currency={currency} />
             </div>
+
+            <PaymentBreakdown data={payment_breakdown ?? []} currency={currency} />
         </AdminLayout>
     );
 }

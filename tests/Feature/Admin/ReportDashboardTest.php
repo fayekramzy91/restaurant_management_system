@@ -5,9 +5,11 @@ namespace Tests\Feature\Admin;
 use App\Models\Branch;
 use App\Models\Category;
 use App\Models\Customer;
+use App\Models\Invoice;
 use App\Models\MenuItem;
 use App\Models\Order;
 use App\Models\OrderItem;
+use Carbon\Carbon;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Inertia\Testing\AssertableInertia as Assert;
 use Tests\TestCase;
@@ -16,6 +18,35 @@ use Tests\Traits\ActsAsRole;
 class ReportDashboardTest extends TestCase
 {
     use RefreshDatabase, ActsAsRole;
+
+    // ── Helpers ───────────────────────────────────────────────────────────────
+
+    /**
+     * Create a paid Invoice row for an Order.
+     * Revenue queries now read invoices.total + invoices.issued_at, not orders.total_amount.
+     *
+     * @param  Order              $order
+     * @param  float              $total      The billed total (after tax/discount)
+     * @param  string|Carbon|null $issuedAt   Defaults to now()
+     */
+    private function createPaidInvoice(Order $order, float $total, mixed $issuedAt = null): Invoice
+    {
+        return Invoice::create([
+            'order_id'       => $order->id,
+            'branch_id'      => $order->branch_id,
+            'customer_id'    => $order->customer_id,
+            'invoice_number' => Invoice::generateNumber(),
+            'subtotal'       => $total,
+            'discount'       => 0,
+            'tax_rate'       => 0,
+            'tax_amount'     => 0,
+            'total'          => $total,
+            'paid_amount'    => $total,
+            'wallet_amount'  => 0,
+            'status'         => 'paid',
+            'issued_at'      => $issuedAt ?? now(),
+        ]);
+    }
 
     // ── Access control ────────────────────────────────────────────────────────
 
@@ -59,7 +90,10 @@ class ReportDashboardTest extends TestCase
             ->assertInertia(fn (Assert $page) => $page
                 ->component('Admin/Reports/Dashboard')
                 ->has('kpi.total_revenue')
+                ->has('kpi.total_tax')
+                ->has('kpi.total_discount')
                 ->has('kpi.total_orders')
+                ->has('kpi.completed_orders')
                 ->has('kpi.avg_order_value')
                 ->has('kpi.customers_served')
                 ->has('revenue_by_day')
@@ -67,6 +101,7 @@ class ReportDashboardTest extends TestCase
                 ->has('type_breakdown')
                 ->has('top_items')
                 ->has('branch_performance')
+                ->has('payment_breakdown')
                 ->has('filters')
             );
     }
@@ -78,14 +113,16 @@ class ReportDashboardTest extends TestCase
         $user   = $this->actAsAdmin();
         $branch = Branch::factory()->create();
 
-        Order::factory()->create([
+        $completed = Order::factory()->create([
             'branch_id'    => $branch->id,
             'user_id'      => $user->id,
             'status'       => 'completed',
             'total_amount' => 100,
         ]);
+        // Paid invoice — must count in revenue
+        $this->createPaidInvoice($completed, 100);
 
-        // Pending — must NOT count in revenue
+        // Pending — no invoice (not yet billed) — must NOT count in revenue
         Order::factory()->create([
             'branch_id'    => $branch->id,
             'user_id'      => $user->id,
@@ -105,8 +142,10 @@ class ReportDashboardTest extends TestCase
         $user   = $this->actAsAdmin();
         $branch = Branch::factory()->create();
 
-        Order::factory()->create(['branch_id' => $branch->id, 'user_id' => $user->id, 'status' => 'completed', 'total_amount' => 100]);
-        Order::factory()->create(['branch_id' => $branch->id, 'user_id' => $user->id, 'status' => 'completed', 'total_amount' => 200]);
+        $order1 = Order::factory()->create(['branch_id' => $branch->id, 'user_id' => $user->id, 'status' => 'completed', 'total_amount' => 100]);
+        $order2 = Order::factory()->create(['branch_id' => $branch->id, 'user_id' => $user->id, 'status' => 'completed', 'total_amount' => 200]);
+        $this->createPaidInvoice($order1, 100);
+        $this->createPaidInvoice($order2, 200);
 
         $this->get(route('admin.reports.dashboard'))
             ->assertInertia(fn (Assert $page) => $page
@@ -153,14 +192,15 @@ class ReportDashboardTest extends TestCase
         $user   = $this->actAsAdmin();
         $branch = Branch::factory()->create();
 
-        // Yesterday — must NOT appear in default (today) view
-        Order::factory()->create([
+        // Yesterday order with a yesterday invoice — must NOT appear in today's view
+        $order = Order::factory()->create([
             'branch_id'    => $branch->id,
             'user_id'      => $user->id,
             'status'       => 'completed',
             'total_amount' => 999,
             'created_at'   => now()->subDay(),
         ]);
+        $this->createPaidInvoice($order, 999, now()->subDay());
 
         $this->get(route('admin.reports.dashboard'))
             ->assertInertia(fn (Assert $page) => $page
@@ -174,13 +214,14 @@ class ReportDashboardTest extends TestCase
         $user   = $this->actAsAdmin();
         $branch = Branch::factory()->create();
 
-        Order::factory()->create([
+        $order = Order::factory()->create([
             'branch_id'    => $branch->id,
             'user_id'      => $user->id,
             'status'       => 'completed',
             'total_amount' => 80,
             'created_at'   => now()->subDay(),
         ]);
+        $this->createPaidInvoice($order, 80, now()->subDay());
 
         $this->get(route('admin.reports.dashboard', ['preset' => 'yesterday']))
             ->assertInertia(fn (Assert $page) => $page
@@ -194,15 +235,16 @@ class ReportDashboardTest extends TestCase
         $user   = $this->actAsAdmin();
         $branch = Branch::factory()->create();
 
-        Order::factory()->create([
+        $inside = Order::factory()->create([
             'branch_id'    => $branch->id,
             'user_id'      => $user->id,
             'status'       => 'completed',
             'total_amount' => 150,
             'created_at'   => now()->subDays(5),
         ]);
+        $this->createPaidInvoice($inside, 150, now()->subDays(5));
 
-        // 8 days ago — outside last_7 window
+        // 8 days ago — outside last_7 window — no invoice created
         Order::factory()->create([
             'branch_id'    => $branch->id,
             'user_id'      => $user->id,
@@ -223,15 +265,16 @@ class ReportDashboardTest extends TestCase
         $user   = $this->actAsAdmin();
         $branch = Branch::factory()->create();
 
-        Order::factory()->create([
+        $inside = Order::factory()->create([
             'branch_id'    => $branch->id,
             'user_id'      => $user->id,
             'status'       => 'completed',
             'total_amount' => 75,
             'created_at'   => '2026-04-10 12:00:00',
         ]);
+        $this->createPaidInvoice($inside, 75, '2026-04-10 12:00:00');
 
-        // Outside the custom range
+        // Outside the custom range — no invoice created
         Order::factory()->create([
             'branch_id'    => $branch->id,
             'user_id'      => $user->id,
@@ -267,8 +310,10 @@ class ReportDashboardTest extends TestCase
         $user   = $this->actAsAdmin();
         $branch = Branch::factory()->create();
 
-        Order::factory()->create(['branch_id' => $branch->id, 'user_id' => $user->id, 'status' => 'completed', 'total_amount' => 50]);
-        Order::factory()->create(['branch_id' => $branch->id, 'user_id' => $user->id, 'status' => 'completed', 'total_amount' => 30]);
+        $order1 = Order::factory()->create(['branch_id' => $branch->id, 'user_id' => $user->id, 'status' => 'completed', 'total_amount' => 50]);
+        $order2 = Order::factory()->create(['branch_id' => $branch->id, 'user_id' => $user->id, 'status' => 'completed', 'total_amount' => 30]);
+        $this->createPaidInvoice($order1, 50);
+        $this->createPaidInvoice($order2, 30);
 
         $this->get(route('admin.reports.dashboard'))
             ->assertInertia(fn (Assert $page) => $page
@@ -276,6 +321,9 @@ class ReportDashboardTest extends TestCase
                 ->has('revenue_by_day.0', fn (Assert $entry) => $entry
                     ->has('date')
                     ->where('revenue', 80)
+                    ->has('tax')
+                    ->has('discount')
+                    ->has('invoice_count')
                 )
             );
     }
@@ -386,8 +434,10 @@ class ReportDashboardTest extends TestCase
         $user   = $this->actAsAdmin();
         $branch = Branch::factory()->create();
 
-        Order::factory()->create(['branch_id' => $branch->id, 'user_id' => $user->id, 'status' => 'completed', 'total_amount' => 200]);
-        Order::factory()->create(['branch_id' => $branch->id, 'user_id' => $user->id, 'status' => 'completed', 'total_amount' => 100]);
+        $order1 = Order::factory()->create(['branch_id' => $branch->id, 'user_id' => $user->id, 'status' => 'completed', 'total_amount' => 200]);
+        $order2 = Order::factory()->create(['branch_id' => $branch->id, 'user_id' => $user->id, 'status' => 'completed', 'total_amount' => 100]);
+        $this->createPaidInvoice($order1, 200);
+        $this->createPaidInvoice($order2, 100);
 
         $this->get(route('admin.reports.dashboard'))
             ->assertInertia(fn (Assert $page) => $page
@@ -398,6 +448,9 @@ class ReportDashboardTest extends TestCase
                     ->where('avg_value', 150)
                     ->has('name')
                     ->has('is_main')
+                    ->has('invoice_count')
+                    ->has('tax')
+                    ->has('discount')
                 )
             );
     }
@@ -411,13 +464,17 @@ class ReportDashboardTest extends TestCase
         $this->get(route('admin.reports.dashboard'))
             ->assertInertia(fn (Assert $page) => $page
                 ->where('kpi.total_revenue', 0)
+                ->where('kpi.total_tax', 0)
+                ->where('kpi.total_discount', 0)
                 ->where('kpi.total_orders', 0)
+                ->where('kpi.completed_orders', 0)
                 ->where('kpi.avg_order_value', 0)
                 ->where('kpi.customers_served', 0)
                 ->has('revenue_by_day', 0)
                 ->has('status_distribution', 0)
                 ->has('type_breakdown', 0)
                 ->has('top_items', 0)
+                ->has('payment_breakdown', 0)
             );
     }
 }

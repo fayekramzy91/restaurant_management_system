@@ -84,9 +84,12 @@ Route::middleware('auth')->prefix('admin')->name('admin.')->group(function () {
         ->middleware('permission:admin.tables')
         ->name('tables.generate-qr');
 
-    Route::get('reports', [ReportController::class, 'dashboard'])
-        ->middleware('permission:reports.view')
-        ->name('reports.dashboard');
+    Route::middleware('permission:reports.view')->group(function () {
+        Route::get('reports',         [ReportController::class, 'dashboard'])->name('reports.dashboard');
+        Route::get('reports/taxes',   [ReportController::class, 'taxes'])   ->name('reports.taxes');
+        Route::get('reports/shifts',  [ReportController::class, 'shifts'])  ->name('reports.shifts');
+        Route::get('reports/wallet',  [ReportController::class, 'wallet'])  ->name('reports.wallet');
+    });
 
     Route::middleware('permission:reports.view')->group(function () {
         Route::get('orders', [AdminOrderController::class, 'index'])->name('orders.index');

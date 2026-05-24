@@ -2,33 +2,125 @@ import { Link, usePage } from '@inertiajs/react';
 import { useState } from 'react';
 import {
     LayoutDashboard, Store, Tag, Utensils, Map, LayoutGrid,
-    ShoppingCart, Settings, LogOut, ChevronLeft, Users, UserCog, ShieldCheck,
-    BarChart2, ReceiptText, Percent,
+    ShoppingCart, Settings, LogOut, ChevronLeft, ChevronDown, Users, UserCog, ShieldCheck,
+    BarChart2, ReceiptText, Percent, FileText, Clock, Wallet,
 } from 'lucide-react';
 import { Avatar, AvatarFallback } from '@/Components/ui/avatar';
 import { Separator } from '@/Components/ui/separator';
 import { cn } from '@/lib/utils';
 
+/**
+ * NAV_ITEMS — flat items use { name, icon, route, active, permission }
+ * Group items use { type:'group', name, icon, active, permission, children:[...] }
+ * where children follow the same shape but `permission` is optional (inherited from group).
+ */
 const NAV_ITEMS = [
-    { name: 'لوحة التحكم',       icon: LayoutDashboard, route: 'admin.dashboard',          active: 'admin.dashboard',      permission: 'dashboard.view' },
-    { name: 'التقارير',          icon: BarChart2,       route: 'admin.reports.dashboard',  active: 'admin.reports.*',      permission: 'reports.view' },
-    { name: 'الطلبات',           icon: ShoppingCart,    route: 'admin.orders.index',       active: 'admin.orders.*',       permission: 'reports.view' },
-    { name: 'الفواتير',          icon: ReceiptText,     route: 'admin.invoices.index',     active: 'admin.invoices.*',     permission: 'payments.view' },
-    { name: 'العملاء',           icon: Users,           route: 'admin.customers.index', active: 'admin.customers.*',    permission: 'customers.view' },
-    { name: 'الأفرع',            icon: Store,           route: 'admin.branches.index',  active: 'admin.branches.*',     permission: 'admin.branches' },
-    { name: 'التصنيفات',         icon: Tag,             route: 'admin.categories.index',active: 'admin.categories.*',  permission: 'admin.categories' },
-    { name: 'قائمة الطعام',      icon: Utensils,        route: 'admin.menu-items.index',active: 'admin.menu-items.*',  permission: 'admin.categories' },
-    { name: 'القاعات',           icon: Map,             route: 'admin.areas.index',     active: 'admin.areas.*',        permission: 'admin.areas' },
-    { name: 'الطاولات',          icon: LayoutGrid,      route: 'admin.tables.index',    active: 'admin.tables.*',       permission: 'admin.tables' },
-    { name: 'المستخدمون',        icon: UserCog,         route: 'admin.users.index',     active: 'admin.users.*',        permission: 'admin.users' },
-    { name: 'الأدوار والصلاحيات', icon: ShieldCheck,    route: 'admin.roles.index',     active: 'admin.roles.*',        permission: 'admin.roles' },
-    { name: 'الضرائب',           icon: Percent,         route: 'admin.taxes.index',     active: 'admin.taxes.*',        permission: 'admin.taxes' },
-    { name: 'الإعدادات',         icon: Settings,        route: 'admin.settings.index',  active: 'admin.settings.*',     permission: 'admin.settings' },
+    { name: 'لوحة التحكم',        icon: LayoutDashboard, route: 'admin.dashboard',         active: 'admin.dashboard',     permission: 'dashboard.view' },
+    {
+        type:       'group',
+        name:       'التقارير',
+        icon:       BarChart2,
+        active:     'admin.reports.*',
+        permission: 'reports.view',
+        children: [
+            { name: 'لوحة التقارير',  icon: BarChart2, route: 'admin.reports.dashboard', active: 'admin.reports.dashboard' },
+            { name: 'تقرير الضرائب',  icon: FileText,  route: 'admin.reports.taxes',     active: 'admin.reports.taxes'    },
+            { name: 'تقرير الورديات', icon: Clock,     route: 'admin.reports.shifts',    active: 'admin.reports.shifts'   },
+            { name: 'تقرير المحافظ',  icon: Wallet,    route: 'admin.reports.wallet',    active: 'admin.reports.wallet'   },
+        ],
+    },
+    { name: 'الطلبات',            icon: ShoppingCart, route: 'admin.orders.index',        active: 'admin.orders.*',       permission: 'reports.view' },
+    { name: 'الفواتير',           icon: ReceiptText,  route: 'admin.invoices.index',      active: 'admin.invoices.*',     permission: 'payments.view' },
+    { name: 'العملاء',            icon: Users,        route: 'admin.customers.index',     active: 'admin.customers.*',    permission: 'customers.view' },
+    { name: 'الأفرع',             icon: Store,        route: 'admin.branches.index',      active: 'admin.branches.*',     permission: 'admin.branches' },
+    { name: 'التصنيفات',          icon: Tag,          route: 'admin.categories.index',    active: 'admin.categories.*',   permission: 'admin.categories' },
+    { name: 'قائمة الطعام',       icon: Utensils,     route: 'admin.menu-items.index',    active: 'admin.menu-items.*',   permission: 'admin.categories' },
+    { name: 'القاعات',            icon: Map,          route: 'admin.areas.index',         active: 'admin.areas.*',        permission: 'admin.areas' },
+    { name: 'الطاولات',           icon: LayoutGrid,   route: 'admin.tables.index',        active: 'admin.tables.*',       permission: 'admin.tables' },
+    { name: 'المستخدمون',         icon: UserCog,      route: 'admin.users.index',         active: 'admin.users.*',        permission: 'admin.users' },
+    { name: 'الأدوار والصلاحيات', icon: ShieldCheck,  route: 'admin.roles.index',         active: 'admin.roles.*',        permission: 'admin.roles' },
+    { name: 'الضرائب',            icon: Percent,      route: 'admin.taxes.index',         active: 'admin.taxes.*',        permission: 'admin.taxes' },
+    { name: 'الإعدادات',          icon: Settings,     route: 'admin.settings.index',      active: 'admin.settings.*',     permission: 'admin.settings' },
 ];
 
+// ── NavGroup — collapsible section ───────────────────────────────────────────
+function NavGroup({ item, collapsed }) {
+    // Auto-open if any child route is currently active
+    const anyChildActive = item.children.some(c => {
+        try { return route().current(c.active); } catch { return false; }
+    });
+    const [open, setOpen] = useState(anyChildActive);
+    const groupActive = (() => { try { return route().current(item.active); } catch { return false; } })();
+
+    // Collapsed sidebar: render as a single icon-link to the first child
+    if (collapsed) {
+        return (
+            <Link
+                href={route(item.children[0].route)}
+                title={item.name}
+                className={cn(
+                    'flex items-center justify-center px-2 py-2.5 rounded-lg text-sm font-bold transition-all',
+                    groupActive
+                        ? 'bg-[#ee1d23] text-white shadow-lg shadow-red-900/30'
+                        : 'text-white/60 hover:text-white hover:bg-white/10'
+                )}
+            >
+                <item.icon size={18} className="shrink-0" />
+            </Link>
+        );
+    }
+
+    return (
+        <div>
+            {/* Group header button */}
+            <button
+                onClick={() => setOpen(v => !v)}
+                className={cn(
+                    'w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-bold transition-all',
+                    groupActive && !open
+                        ? 'bg-white/10 text-white'
+                        : 'text-white/60 hover:text-white hover:bg-white/10'
+                )}
+            >
+                <item.icon size={18} className="shrink-0" />
+                <span className="flex-1 text-start">{item.name}</span>
+                <ChevronDown
+                    size={14}
+                    className={cn('shrink-0 transition-transform duration-200', open && 'rotate-180')}
+                />
+            </button>
+
+            {/* Children */}
+            {open && (
+                <div className="me-2 border-e border-white/10 pe-2 space-y-0.5 mt-0.5 ms-3">
+                    {item.children.map(child => {
+                        const active = (() => { try { return route().current(child.active); } catch { return false; } })();
+                        return (
+                            <Link
+                                key={child.route}
+                                href={route(child.route)}
+                                className={cn(
+                                    'flex items-center gap-2.5 px-2.5 py-2 rounded-lg text-xs font-bold transition-all',
+                                    active
+                                        ? 'bg-[#ee1d23] text-white shadow-md shadow-red-900/30'
+                                        : 'text-white/50 hover:text-white hover:bg-white/10'
+                                )}
+                            >
+                                <child.icon size={14} className="shrink-0" />
+                                <span>{child.name}</span>
+                            </Link>
+                        );
+                    })}
+                </div>
+            )}
+        </div>
+    );
+}
+
+// ── Layout ────────────────────────────────────────────────────────────────────
 export default function AdminLayout({ children, title }) {
     const { auth } = usePage().props;
-    const user = auth.user;
+    const user        = auth.user;
     const permissions = user?.permissions ?? [];
 
     const visibleItems = NAV_ITEMS.filter(
@@ -58,7 +150,13 @@ export default function AdminLayout({ children, title }) {
                 {/* Nav */}
                 <nav className="flex-1 py-4 px-2 space-y-0.5 overflow-y-auto">
                     {visibleItems.map((item) => {
-                        const active = route().current(item.active);
+                        if (item.type === 'group') {
+                            return (
+                                <NavGroup key={item.name} item={item} collapsed={collapsed} />
+                            );
+                        }
+
+                        const active = (() => { try { return route().current(item.active); } catch { return false; } })();
                         return (
                             <Link
                                 key={item.name}
