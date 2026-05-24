@@ -66,6 +66,9 @@ export default function Index({ users, roles, branches }) {
         setOpen(true);
     };
 
+    // True when the currently-selected role is the system admin
+    const isAdminRole = roles.find(r => r.id === Number(form.data.role_id))?.name === 'admin';
+
     const submitMain = (e) => {
         e.preventDefault();
         const opts = { onSuccess: () => { setOpen(false); form.reset(); } };
@@ -148,8 +151,13 @@ export default function Index({ users, roles, branches }) {
                                     <TableCell><RoleBadge role={u.role} /></TableCell>
 
                                     {/* Branch */}
-                                    <TableCell className="text-slate-400 text-sm">
-                                        {u.branch ? u.branch.name : <span className="text-slate-300 text-xs">كل الفروع</span>}
+                                    <TableCell className="text-slate-500 text-sm">
+                                        {u.branch
+                                            ? u.branch.name
+                                            : u.role?.name === 'admin'
+                                                ? <span className="text-slate-300 text-xs">جميع الفروع</span>
+                                                : <span className="text-amber-500 text-xs font-semibold">غير مُعيَّن</span>
+                                        }
                                     </TableCell>
 
                                     {/* Status */}
@@ -240,7 +248,13 @@ export default function Index({ users, roles, branches }) {
                             <Field label="الدور" error={form.errors.role_id}>
                                 <select
                                     value={form.data.role_id}
-                                    onChange={e => form.setData('role_id', e.target.value)}
+                                    onChange={e => {
+                                        const selectedRole = roles.find(r => r.id === Number(e.target.value));
+                                        form.setData('role_id', e.target.value);
+                                        if (selectedRole?.name === 'admin') {
+                                            form.setData('branch_id', '');
+                                        }
+                                    }}
                                     required
                                     className="w-full border border-input rounded-md px-3 py-2 text-sm bg-background focus:outline-none focus:ring-2 focus:ring-ring"
                                 >
@@ -249,16 +263,23 @@ export default function Index({ users, roles, branches }) {
                                 </select>
                             </Field>
 
-                            <Field label="الفرع" error={form.errors.branch_id}>
-                                <select
-                                    value={form.data.branch_id}
-                                    onChange={e => form.setData('branch_id', e.target.value)}
-                                    className="w-full border border-input rounded-md px-3 py-2 text-sm bg-background focus:outline-none focus:ring-2 focus:ring-ring"
-                                >
-                                    <option value="">كل الفروع</option>
-                                    {branches.map(b => <option key={b.id} value={b.id}>{b.name}</option>)}
-                                </select>
-                            </Field>
+                            {isAdminRole ? (
+                                <div className="rounded-lg bg-slate-50 border border-slate-200 px-3 py-2.5 text-xs text-slate-400 leading-relaxed">
+                                    مدير النظام لا يحتاج إلى تعيين فرع محدد — يملك صلاحية الوصول إلى جميع البيانات.
+                                </div>
+                            ) : (
+                                <Field label="الفرع" error={form.errors.branch_id}>
+                                    <select
+                                        value={form.data.branch_id}
+                                        onChange={e => form.setData('branch_id', e.target.value)}
+                                        required
+                                        className="w-full border border-input rounded-md px-3 py-2 text-sm bg-background focus:outline-none focus:ring-2 focus:ring-ring"
+                                    >
+                                        <option value="">— اختر الفرع —</option>
+                                        {branches.map(b => <option key={b.id} value={b.id}>{b.name}</option>)}
+                                    </select>
+                                </Field>
+                            )}
 
                             <div className="flex items-center gap-2 pt-1">
                                 <input

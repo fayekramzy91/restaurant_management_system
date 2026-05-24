@@ -40,6 +40,18 @@ export default function Index({ areas, orders }) {
     const [orderTypeFilter, setOrderTypeFilter]   = useState('all');
     const [creating, setCreating] = useState(false);
 
+    /* ── Shift / cash register ───────────────────── */
+    const [shiftSession, setShiftSession]       = useState(null);
+    const [shiftLoading, setShiftLoading]       = useState(true);
+    const [showOpenModal, setShowOpenModal]     = useState(false);
+    const [showCloseModal, setShowCloseModal]   = useState(false);
+    const [openingBalance, setOpeningBalance]   = useState('');
+    const [actualBalance, setActualBalance]     = useState('');
+    const [shiftNotes, setShiftNotes]           = useState('');
+    const [zReport, setZReport]                 = useState(null);
+    const [shiftSubmitting, setShiftSubmitting] = useState(false);
+    const [shiftError, setShiftError]           = useState('');
+
     /* ── Ready-order notifications ───────────────── */
     const [readyNotices, setReadyNotices] = useState([]);
     const prevOrdersRef = useRef(orders);
@@ -105,6 +117,14 @@ export default function Index({ areas, orders }) {
         return () => clearInterval(id);
     }, []);
 
+    // Fetch shift status on mount
+    useEffect(() => {
+        fetch('/pos/shift/status', { headers: { 'Accept': 'application/json' } })
+            .then(r => r.json())
+            .then(data => { setShiftSession(data.session); setShiftLoading(false); })
+            .catch(() => setShiftLoading(false));
+    }, []);
+
     const tableCounts = useMemo(() => {
         const all = areas.flatMap(a => a.tables);
         return {
@@ -137,6 +157,58 @@ export default function Index({ areas, orders }) {
         router.post(route('pos.new-order'), { type }, {
             onFinish: () => { setCreating(false); setShowNewOrderModal(false); },
         });
+    };
+
+    /* ── Shift handlers ──────────────────────────── */
+    const csrfToken = () =>
+        document.querySelector('meta[name="csrf-token"]')?.content ?? '';
+
+    const handleOpenShift = async () => {
+        if (openingBalance === '' && openingBalance !== '0') return;
+        setShiftSubmitting(true);
+        setShiftError('');
+        try {
+            const res  = await fetch('/pos/shift/open', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'Accept': 'application/json', 'X-CSRF-TOKEN': csrfToken() },
+                body: JSON.stringify({ opening_balance: parseFloat(openingBalance) || 0 }),
+            });
+            const data = await res.json();
+            if (data.success) {
+                setShiftSession(data.session);
+                setShowOpenModal(false);
+                setOpeningBalance('');
+                setShiftError('');
+            } else {
+                setShiftError(data.error ?? 'حدث خطأ غير متوقع');
+            }
+        } catch {
+            setShiftError('تعذّر الاتصال بالخادم');
+        } finally {
+            setShiftSubmitting(false);
+        }
+    };
+
+    const handleCloseShift = async () => {
+        if (!actualBalance) return;
+        setShiftSubmitting(true);
+        try {
+            const res  = await fetch(`/pos/shift/close/${shiftSession.id}`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'Accept': 'application/json', 'X-CSRF-TOKEN': csrfToken() },
+                body: JSON.stringify({ actual_closing_balance: parseFloat(actualBalance), notes: shiftNotes }),
+            });
+            const data = await res.json();
+            if (data.success) {
+                setZReport(data.z_report);
+                setShiftSession(null);
+                setShowCloseModal(false);
+                setActualBalance('');
+                setShiftNotes('');
+            }
+        } finally {
+            setShiftSubmitting(false);
+        }
     };
 
     return (
@@ -191,6 +263,43 @@ export default function Index({ areas, orders }) {
                     </button>
                 </div>
             </header>
+
+            {/* ── Shift Status Bar ── */}
+            {!shiftLoading && (
+                <div className={`mx-4 mt-3 mb-1 rounded-xl px-4 py-2.5 flex items-center justify-between text-sm ${
+                    shiftSession
+                        ? 'bg-green-900/30 border border-green-700/50 text-green-300'
+                        : 'bg-red-900/30 border border-red-700/50 text-red-800'
+                }`}>
+                    {shiftSession ? (
+                        <>
+                            <span className="flex items-center gap-2">
+                                <span className="w-2 h-2 rounded-full bg-green-400 animate-pulse shrink-0" />
+                                وردية مفتوحة &nbsp;|&nbsp; منذ {Math.round((Date.now() - new Date(shiftSession.opened_at)) / 60000)} دقيقة
+                            </span>
+                            <button
+                                onClick={() => setShowCloseModal(true)}
+                                className="bg-red-600/80 hover:bg-red-600 text-white text-xs font-bold px-3 py-1 rounded-lg transition-colors shrink-0"
+                            >
+                                إقفال الوردية
+                            </button>
+                        </>
+                    ) : (
+                        <>
+                            <span className="flex items-center gap-2">
+                                <span className="w-2 h-2 rounded-full bg-red-400 shrink-0" />
+                                لا توجد وردية مفتوحة &nbsp;—&nbsp; المدفوعات النقدية غير متاحة
+                            </span>
+                            <button
+                                onClick={() => setShowOpenModal(true)}
+                                className="bg-[#ee1d23] hover:bg-[#6f272a] text-white text-xs font-bold px-3 py-1 rounded-lg transition-colors shrink-0"
+                            >
+                                فتح وردية
+                            </button>
+                        </>
+                    )}
+                </div>
+            )}
 
             {/* Tab Navigation */}
             <div className="bg-white border-b px-4 sm:px-6 sticky top-[57px] sm:top-[73px] z-40">
@@ -564,6 +673,186 @@ export default function Index({ areas, orders }) {
                     </div>
                 ))}
             </div>
+
+            {/* ───── Open Shift Modal ───── */}
+            {showOpenModal && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60">
+                    <div className="bg-[#1a1a2e] border border-white/10 rounded-2xl p-6 w-80 text-white">
+                        <h3 className="text-lg font-bold mb-4 text-center">فتح وردية صندوق</h3>
+                        <label className="block text-sm text-white/60 mb-1">رصيد الصندوق الافتتاحي (₪)</label>
+                        <input
+                            type="number"
+                            min="0"
+                            step="0.01"
+                            value={openingBalance}
+                            onChange={e => setOpeningBalance(e.target.value)}
+                            className="w-full bg-white/10 border border-white/20 rounded-xl px-4 py-2.5 text-white text-lg font-bold text-center mb-4 focus:outline-none focus:border-[#ee1d23]"
+                            placeholder="0.00"
+                            autoFocus
+                        />
+                        {shiftError && (
+                            <div className="bg-red-900/50 border border-red-500/50 rounded-xl px-3 py-2 mb-4 text-red-300 text-xs leading-relaxed">
+                                {shiftError}
+                            </div>
+                        )}
+                        <div className="flex gap-3">
+                            <button
+                                onClick={() => { setShowOpenModal(false); setShiftError(''); }}
+                                className="flex-1 py-2.5 rounded-xl border border-white/20 text-white/60 hover:bg-white/5 transition-colors"
+                            >
+                                إلغاء
+                            </button>
+                            <button
+                                onClick={handleOpenShift}
+                                disabled={shiftSubmitting}
+                                className="flex-1 py-2.5 rounded-xl bg-[#ee1d23] hover:bg-[#6f272a] text-white font-bold transition-colors disabled:opacity-50"
+                            >
+                                {shiftSubmitting ? '...' : 'فتح الوردية'}
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* ───── Close Shift Modal ───── */}
+            {showCloseModal && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60">
+                    <div className="bg-[#1a1a2e] border border-white/10 rounded-2xl p-6 w-96 text-white">
+                        <h3 className="text-lg font-bold mb-4 text-center">إقفال الوردية</h3>
+                        <div className="bg-white/5 rounded-xl p-3 mb-4 text-sm">
+                            <div className="flex justify-between mb-1">
+                                <span className="text-white/60">الرصيد الافتتاحي</span>
+                                <span className="font-sans">{Number(shiftSession?.opening_balance ?? 0).toFixed(2)} ₪</span>
+                            </div>
+                            <div className="text-white/40 text-xs">الرصيد المتوقع يحتسب عند الإقفال</div>
+                        </div>
+                        <label className="block text-sm text-white/60 mb-1">الرصيد الفعلي في الصندوق (₪)</label>
+                        <input
+                            type="number"
+                            min="0"
+                            step="0.01"
+                            value={actualBalance}
+                            onChange={e => setActualBalance(e.target.value)}
+                            className="w-full bg-white/10 border border-white/20 rounded-xl px-4 py-2.5 text-white text-lg font-bold text-center mb-3 focus:outline-none focus:border-[#ee1d23]"
+                            placeholder="0.00"
+                            autoFocus
+                        />
+                        <label className="block text-sm text-white/60 mb-1">ملاحظات (اختياري)</label>
+                        <textarea
+                            value={shiftNotes}
+                            onChange={e => setShiftNotes(e.target.value)}
+                            rows={2}
+                            className="w-full bg-white/10 border border-white/20 rounded-xl px-3 py-2 text-white text-sm mb-4 resize-none focus:outline-none focus:border-white/40"
+                            placeholder="أي ملاحظات..."
+                        />
+                        <div className="flex gap-3">
+                            <button
+                                onClick={() => setShowCloseModal(false)}
+                                className="flex-1 py-2.5 rounded-xl border border-white/20 text-white/60 hover:bg-white/5 transition-colors"
+                            >
+                                إلغاء
+                            </button>
+                            <button
+                                onClick={handleCloseShift}
+                                disabled={shiftSubmitting || !actualBalance}
+                                className="flex-1 py-2.5 rounded-xl bg-red-600 hover:bg-red-700 text-white font-bold transition-colors disabled:opacity-50"
+                            >
+                                {shiftSubmitting ? '...' : 'إقفال وطباعة'}
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* ───── Z-Report Modal ───── */}
+            {zReport && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70">
+                    <div className="bg-white rounded-2xl p-6 w-[480px] max-h-[80vh] overflow-y-auto text-slate-800" dir="rtl">
+                        <h3 className="text-xl font-black text-center mb-1">تقرير إقفال الوردية</h3>
+                        <p className="text-center text-slate-400 text-sm mb-4">Z-Report</p>
+
+                        {/* Session info */}
+                        <div className="bg-slate-50 rounded-xl p-3 mb-3 text-sm">
+                            {[
+                                ['الكاشير', zReport.session.user],
+                                ['الفرع',   zReport.session.branch],
+                                ['المدة',   `${zReport.session.duration_minutes} دقيقة`],
+                            ].map(([label, val]) => (
+                                <div key={label} className="flex justify-between mb-1 last:mb-0">
+                                    <span className="text-slate-500">{label}</span>
+                                    <span className="font-bold">{val}</span>
+                                </div>
+                            ))}
+                        </div>
+
+                        {/* Cash summary */}
+                        <div className="bg-slate-50 rounded-xl p-3 mb-3 text-sm">
+                            <h4 className="font-bold mb-2">ملخص الصندوق</h4>
+                            {[
+                                ['الرصيد الافتتاحي',  zReport.cash_summary.opening_balance],
+                                ['المقبوضات النقدية', zReport.cash_summary.cash_received],
+                                ['الرصيد المتوقع',    zReport.cash_summary.expected_closing],
+                                ['الرصيد الفعلي',     zReport.cash_summary.actual_closing],
+                            ].map(([label, val]) => (
+                                <div key={label} className="flex justify-between mb-1">
+                                    <span className="text-slate-500">{label}</span>
+                                    <span className="font-bold font-sans">{Number(val).toFixed(2)} ₪</span>
+                                </div>
+                            ))}
+                            <div className="flex justify-between pt-2 border-t border-slate-200 mt-1">
+                                <span className="font-bold">الفرق</span>
+                                <span className={`font-black font-sans ${
+                                    zReport.cash_summary.difference < 0 ? 'text-red-600'
+                                    : zReport.cash_summary.difference > 0 ? 'text-blue-600'
+                                    : 'text-green-600'
+                                }`}>
+                                    {zReport.cash_summary.difference >= 0 ? '+' : ''}
+                                    {Number(zReport.cash_summary.difference).toFixed(2)} ₪
+                                </span>
+                            </div>
+                        </div>
+
+                        {/* Sales by payment method */}
+                        <div className="bg-slate-50 rounded-xl p-3 mb-3 text-sm">
+                            <h4 className="font-bold mb-2">المبيعات بطريقة الدفع</h4>
+                            {zReport.sales_summary.by_payment_method.map(m => (
+                                <div key={m.method_name} className="flex justify-between mb-1">
+                                    <span className="text-slate-500">{m.method_name} ({m.count})</span>
+                                    <span className="font-bold font-sans">{Number(m.total).toFixed(2)} ₪</span>
+                                </div>
+                            ))}
+                        </div>
+
+                        {/* Tax summary */}
+                        {zReport.tax_summary?.length > 0 && (
+                            <div className="bg-slate-50 rounded-xl p-3 mb-4 text-sm">
+                                <h4 className="font-bold mb-2">الضرائب</h4>
+                                {zReport.tax_summary.map(t => (
+                                    <div key={t.tax_code} className="flex justify-between mb-1">
+                                        <span className="text-slate-500">{t.tax_name}</span>
+                                        <span className="font-bold font-sans">{Number(t.tax_amount).toFixed(2)} ₪</span>
+                                    </div>
+                                ))}
+                            </div>
+                        )}
+
+                        <div className="flex gap-3">
+                            <button
+                                onClick={() => window.print()}
+                                className="flex-1 py-2.5 rounded-xl bg-slate-800 text-white font-bold"
+                            >
+                                طباعة
+                            </button>
+                            <button
+                                onClick={() => setZReport(null)}
+                                className="flex-1 py-2.5 rounded-xl border border-slate-300 text-slate-600 font-bold"
+                            >
+                                إغلاق
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
 
             {/* ───── New Order Modal ───── */}
             <Modal show={showNewOrderModal} onClose={() => setShowNewOrderModal(false)} maxWidth="sm">

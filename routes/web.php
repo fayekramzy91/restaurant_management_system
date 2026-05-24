@@ -18,6 +18,7 @@ use App\Http\Controllers\Admin\TableController;
 use App\Http\Controllers\Admin\TaxRateController;
 use App\Http\Controllers\Admin\UserController;
 use App\Http\Controllers\Kitchen\KitchenController;
+use App\Http\Controllers\POS\CashRegisterController;
 use App\Http\Controllers\POS\CustomerController as POSCustomerController;
 use App\Http\Controllers\POS\OrderController;
 use App\Http\Controllers\POS\POSController;
@@ -160,6 +161,13 @@ Route::middleware('auth')->group(function () {
     Route::post('/kitchen/order/{order}/ready', [KitchenController::class, 'markAsReady'])
         ->middleware('permission:kitchen.update')
         ->name('kitchen.ready');
+});
+
+// ── POS: Shift (cash register) ────────────────────────────────────────────────
+Route::middleware('auth')->prefix('pos/shift')->name('pos.shift.')->group(function () {
+    Route::get('status',           [CashRegisterController::class, 'status'])->name('status');
+    Route::post('open',            [CashRegisterController::class, 'open'])  ->name('open');
+    Route::post('close/{session}', [CashRegisterController::class, 'close']) ->name('close');
 });
 
 // ── POS ───────────────────────────────────────────────────────────────────────

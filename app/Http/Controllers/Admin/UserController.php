@@ -35,16 +35,21 @@ class UserController extends Controller
 
     public function store(Request $request)
     {
+        $isAdmin = Role::find($request->role_id)?->name === 'admin';
+
         $validated = $request->validate([
             'name'      => 'required|string|max:255',
             'username'  => 'required|string|max:50|unique:users,username',
             'password'  => 'required|string|min:6',
             'role_id'   => 'required|exists:roles,id',
-            'branch_id' => 'nullable|exists:branches,id',
+            'branch_id' => $isAdmin ? 'nullable|exists:branches,id' : 'required|exists:branches,id',
             'is_active' => 'boolean',
         ]);
 
         $validated['password'] = Hash::make($validated['password']);
+        if ($isAdmin) {
+            $validated['branch_id'] = null;
+        }
 
         User::create($validated);
 
@@ -53,13 +58,19 @@ class UserController extends Controller
 
     public function update(Request $request, User $user)
     {
+        $isAdmin = Role::find($request->role_id)?->name === 'admin';
+
         $validated = $request->validate([
             'name'      => 'required|string|max:255',
             'username'  => 'required|string|max:50|unique:users,username,' . $user->id,
             'role_id'   => 'required|exists:roles,id',
-            'branch_id' => 'nullable|exists:branches,id',
+            'branch_id' => $isAdmin ? 'nullable|exists:branches,id' : 'required|exists:branches,id',
             'is_active' => 'boolean',
         ]);
+
+        if ($isAdmin) {
+            $validated['branch_id'] = null;
+        }
 
         $user->update($validated);
 

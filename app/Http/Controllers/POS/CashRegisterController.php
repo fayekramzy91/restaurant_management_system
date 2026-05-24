@@ -41,8 +41,17 @@ class CashRegisterController extends Controller
             'opening_balance' => 'required|numeric|min:0',
         ]);
 
+        // Rule: user must be assigned to a branch
+        $user = auth()->user();
+        if (! $user->branch_id) {
+            return response()->json([
+                'error' => 'لا يمكن فتح وردية: هذا المستخدم غير مرتبط بفرع. '
+                         . 'يرجى تعيين فرع للمستخدم من لوحة الإدارة.',
+            ], 422);
+        }
+
         // Rule: one open session per user
-        $existing = CashRegisterSession::where('user_id', auth()->id())
+        $existing = CashRegisterSession::where('user_id', $user->id)
             ->where('status', 'open')
             ->exists();
 
@@ -52,7 +61,6 @@ class CashRegisterController extends Controller
             ], 422);
         }
 
-        $user    = auth()->user();
         $session = CashRegisterSession::create([
             'user_id'         => $user->id,
             'branch_id'       => $user->branch_id,
