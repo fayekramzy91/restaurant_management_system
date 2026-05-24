@@ -111,6 +111,14 @@ Route::middleware('auth')->prefix('admin')->name('admin.')->group(function () {
         ->middleware('permission:customers.view')
         ->name('customers.index');
 
+    Route::get('customers/{customer}/wallet', [AdminCustomerController::class, 'wallet'])
+        ->middleware('permission:customers.view')
+        ->name('customers.wallet');
+
+    Route::post('customers/{customer}/wallet/adjust', [AdminCustomerController::class, 'walletAdjust'])
+        ->middleware('permission:admin.wallet_adjust')
+        ->name('customers.wallet.adjust');
+
     Route::middleware('permission:admin.settings')->group(function () {
         Route::get('settings', [SettingController::class, 'index'])->name('settings.index');
         Route::post('settings', [SettingController::class, 'update'])->name('settings.update');

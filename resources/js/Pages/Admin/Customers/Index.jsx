@@ -1,5 +1,5 @@
 import AdminLayout from '@/Layouts/AdminLayout';
-import { Head, usePage } from '@inertiajs/react';
+import { Head, Link, usePage } from '@inertiajs/react';
 import { Users, Phone, Mail, MapPin, ShoppingBag, Wallet } from 'lucide-react';
 import { Card } from '@/Components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/Components/ui/table';
@@ -28,9 +28,10 @@ export default function Index({ customers }) {
                             <TableHead className="text-xs font-semibold text-slate-400 uppercase tracking-wide">الهاتف</TableHead>
                             <TableHead className="text-xs font-semibold text-slate-400 uppercase tracking-wide">العنوان</TableHead>
                             <TableHead className="text-center text-xs font-semibold text-slate-400 uppercase tracking-wide">الطلبات</TableHead>
-                            <TableHead className="text-left text-xs font-semibold text-slate-400 uppercase tracking-wide">إجمالي الإنفاق</TableHead>
-                            <TableHead className="text-left text-xs font-semibold text-slate-400 uppercase tracking-wide">رصيد المحفظة</TableHead>
+                            <TableHead className="text-start text-xs font-semibold text-slate-400 uppercase tracking-wide">إجمالي الإنفاق</TableHead>
+                            <TableHead className="text-start text-xs font-semibold text-slate-400 uppercase tracking-wide">رصيد المحفظة</TableHead>
                             <TableHead className="text-xs font-semibold text-slate-400 uppercase tracking-wide">آخر طلب</TableHead>
+                            <TableHead className="w-10"></TableHead>
                         </TableRow>
                     </TableHeader>
                     <TableBody>
@@ -69,11 +70,11 @@ export default function Index({ customers }) {
                                         {customer.orders_count ?? 0}
                                     </span>
                                 </TableCell>
-                                <TableCell className="text-left font-sans font-semibold text-slate-700 text-sm">
-                                    {Number(customer.orders_sum_total_amount ?? 0).toFixed(2)}
+                                <TableCell className="text-start font-sans font-semibold text-slate-700 text-sm">
+                                    {Number(customer.total_revenue ?? 0).toFixed(2)}
                                     <span className="text-xs text-slate-400 font-normal mr-1">{currency}</span>
                                 </TableCell>
-                                <TableCell className="text-left">
+                                <TableCell className="text-start">
                                     <span className={cn(
                                         'inline-flex items-center gap-1 font-sans font-semibold text-sm',
                                         Number(customer.wallet_balance) > 0 ? 'text-emerald-600' : 'text-slate-300'
@@ -91,11 +92,21 @@ export default function Index({ customers }) {
                                         : <span className="text-slate-200">—</span>
                                     }
                                 </TableCell>
+                                <TableCell>
+                                    <Link
+                                        href={route('admin.customers.wallet', customer.id)}
+                                        className="inline-flex items-center gap-1 text-[11px] font-bold text-slate-500 hover:text-[#ee1d23] border border-slate-200 hover:border-[#ee1d23] rounded-md px-2 py-1 transition-colors"
+                                        title="عرض المحفظة"
+                                    >
+                                        <Wallet size={11} />
+                                        المحفظة
+                                    </Link>
+                                </TableCell>
                             </TableRow>
                         ))}
                         {customers.length === 0 && (
                             <TableRow>
-                                <TableCell colSpan={7} className="text-center py-16 text-slate-300">
+                                <TableCell colSpan={8} className="text-center py-16 text-slate-300">
                                     <Users size={28} className="mx-auto mb-2.5 opacity-40" />
                                     <p className="font-semibold text-sm">لا يوجد عملاء مسجلون بعد</p>
                                 </TableCell>

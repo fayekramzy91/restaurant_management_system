@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Admin;
 use App\Http\Controllers\Controller;
 use App\Models\Invoice;
 use App\Models\PaymentMethod;
+use App\Models\WalletTransaction;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Inertia\Inertia;
@@ -99,7 +100,23 @@ class InvoiceController extends Controller
             ]);
 
             if (($validated['refund_to_wallet'] ?? false) && $invoice->customer) {
-                $invoice->customer->increment('wallet_balance', $validated['amount']);
+                $customer = $invoice->customer;
+                $customer->increment('wallet_balance', $validated['amount']);
+
+                // Record in ledger — every wallet mutation must have a WalletTransaction row
+                WalletTransaction::create([
+                    'customer_id'    => $customer->id,
+                    'type'           => 'credit',
+                    'amount'         => $validated['amount'],
+                    'balance_after'  => $customer->fresh()->wallet_balance,
+                    'reason'         => 'refund',
+                    'reference_type' => Invoice::class,
+                    'reference_id'   => $invoice->id,
+                    'notes'          => $validated['notes'] ?? 'استرداد للمحفظة',
+                    'created_by'     => auth()->id(),
+                ]);
+
+                $customer->update(['wallet_last_updated_at' => now()]);
             }
 
             $noteText = !empty($validated['notes']) ? " — {$validated['notes']}" : '';
