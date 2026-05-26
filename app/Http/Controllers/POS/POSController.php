@@ -15,6 +15,7 @@ use App\Models\InvoiceTax;
 use App\Models\MenuItem;
 use App\Models\Order;
 use App\Models\PaymentMethod;
+use App\Models\Reservation;
 use App\Models\Setting;
 use App\Models\Table;
 use App\Models\WalletTransaction;
@@ -36,6 +37,24 @@ class POSController extends Controller
                 ->where('status', '!=', 'completed')
                 ->latest()
                 ->get(),
+            'today_reservations' => Reservation::with('table:id,name', 'customer:id,name,phone')
+                ->whereDate('reservation_date', today())
+                ->whereIn('status', ['confirmed', 'seated', 'waitlist'])
+                ->orderBy('reservation_time')
+                ->get()
+                ->map(fn ($r) => [
+                    'id'               => $r->id,
+                    'customer_name'    => $r->customer_name,
+                    'customer_phone'   => $r->customer_phone,
+                    'party_size'       => $r->party_size,
+                    'table_id'         => $r->table_id,
+                    'reservation_time' => $r->reservation_time,
+                    'status'           => $r->status,
+                    'deposit_amount'   => $r->deposit_amount,
+                    'deposit_paid'     => $r->deposit_paid,
+                    'notes'            => $r->notes,
+                ])
+                ->groupBy('table_id'),
         ]);
     }
 

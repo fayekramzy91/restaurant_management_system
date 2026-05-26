@@ -381,4 +381,136 @@ class ReportController extends Controller
             default => [Carbon::today(), Carbon::today()],
         };
     }
+
+    // ──────────────────────────────────────────────────────────────────────────
+
+    public function reservations(Request $request)
+    {
+        $preset   = $request->get('preset', 'last_30');
+        $dateFrom = $request->get('date_from');
+        $dateTo   = $request->get('date_to');
+
+        [$from, $to] = $this->resolveRange($preset, $dateFrom, $dateTo);
+
+        $fromStart = $from->copy()->startOfDay();
+        $toEnd     = $to->copy()->endOfDay();
+
+        // ── Status distribution ───────────────────────────────────────────────
+        $byStatus = \App\Models\Reservation
+            ::whereBetween('reservation_date',
+                [$fromStart->toDateString(), $toEnd->toDateString()])
+            ->selectRaw('status, COUNT(*) as count')
+            ->groupBy('status')
+            ->pluck('count', 'status');
+
+        $total     = $byStatus->sum();
+        $completed = (int) ($byStatus->get('completed', 0));
+        $noShow    = (int) ($byStatus->get('no_show',   0));
+        $cancelled = (int) ($byStatus->get('cancelled', 0));
+
+        $completionRate = $total > 0
+            ? round($completed / $total * 100, 1) : 0;
+        $noShowRate = $total > 0
+            ? round($noShow / $total * 100, 1) : 0;
+
+        // ── Deposit stats ─────────────────────────────────────────────────────
+        $depositStats = \App\Models\Reservation
+            ::whereBetween('reservation_date',
+                [$fromStart->toDateString(), $toEnd->toDateString()])
+            ->where('deposit_paid', true)
+            ->selectRaw('COUNT(*) as count, SUM(deposit_amount) as total_deposits')
+            ->first();
+
+        // ── By day ────────────────────────────────────────────────────────────
+        $byDay = \App\Models\Reservation
+            ::whereBetween('reservation_date',
+                [$fromStart->toDateString(), $toEnd->toDateString()])
+            ->selectRaw("
+                reservation_date as date,
+                COUNT(*) as total,
+                SUM(CASE WHEN status = 'completed' THEN 1 ELSE 0 END) as completed,
+                SUM(CASE WHEN status = 'no_show'   THEN 1 ELSE 0 END) as no_shows,
+                SUM(CASE WHEN status = 'cancelled' THEN 1 ELSE 0 END) as cancelled
+            ")
+            ->groupBy('reservation_date')
+            ->orderBy('reservation_date')
+            ->get()
+            ->map(fn ($r) => [
+                'date'      => $r->date,
+                'total'     => (int) $r->total,
+                'completed' => (int) $r->completed,
+                'no_shows'  => (int) $r->no_shows,
+                'cancelled' => (int) $r->cancelled,
+                'other'     => (int) $r->total
+                               - (int) $r->completed
+                               - (int) $r->no_shows
+                               - (int) $r->cancelled,
+            ]);
+
+        // ── Peak hours ────────────────────────────────────────────────────────
+        $byHour = \App\Models\Reservation
+            ::whereBetween('reservation_date',
+                [$fromStart->toDateString(), $toEnd->toDateString()])
+            ->selectRaw('HOUR(reservation_time) as hour, COUNT(*) as count')
+            ->groupBy(DB::raw('HOUR(reservation_time)'))
+            ->orderBy('hour')
+            ->get()
+            ->map(fn ($r) => [
+                'hour'  => (int) $r->hour,
+                'label' => (int) $r->hour < 12
+                    ? $r->hour . 'ص'
+                    : (($r->hour == 12) ? '12م' : ($r->hour - 12) . 'م'),
+                'count' => (int) $r->count,
+            ]);
+
+        $peakHour = $byHour->sortByDesc('count')->first();
+
+        // ── By table ──────────────────────────────────────────────────────────
+        $byTable = \App\Models\Reservation
+            ::whereBetween('reservation_date',
+                [$fromStart->toDateString(), $toEnd->toDateString()])
+            ->with('table:id,name')
+            ->selectRaw("
+                table_id,
+                COUNT(*) as total,
+                SUM(CASE WHEN status = 'completed' THEN 1 ELSE 0 END) as completed,
+                SUM(CASE WHEN status = 'no_show'   THEN 1 ELSE 0 END) as no_shows,
+                SUM(CASE WHEN status = 'cancelled' THEN 1 ELSE 0 END) as cancelled
+            ")
+            ->groupBy('table_id')
+            ->orderByDesc('total')
+            ->get()
+            ->map(fn ($r) => [
+                'table_name'      => $r->table?->name ?? '—',
+                'total'           => (int) $r->total,
+                'completed'       => (int) $r->completed,
+                'no_shows'        => (int) $r->no_shows,
+                'cancelled'       => (int) $r->cancelled,
+                'completion_rate' => (int) $r->total > 0
+                    ? round($r->completed / $r->total * 100, 1) : 0,
+            ]);
+
+        return Inertia::render('Admin/Reports/ReservationsReport', [
+            'filters' => [
+                'preset'    => $preset,
+                'date_from' => $dateFrom,
+                'date_to'   => $dateTo,
+            ],
+            'kpi' => [
+                'total'           => (int) $total,
+                'completed'       => $completed,
+                'no_show'         => $noShow,
+                'cancelled'       => $cancelled,
+                'completion_rate' => $completionRate,
+                'no_show_rate'    => $noShowRate,
+                'total_deposits'  => round((float) ($depositStats->total_deposits ?? 0), 2),
+                'deposits_count'  => (int) ($depositStats->count ?? 0),
+                'peak_hour'       => $peakHour ? $peakHour['label'] : null,
+            ],
+            'by_status' => $byStatus,
+            'by_day'    => $byDay,
+            'by_hour'   => $byHour->values(),
+            'by_table'  => $byTable,
+        ]);
+    }
 }

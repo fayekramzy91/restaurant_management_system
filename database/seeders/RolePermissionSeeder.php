@@ -44,6 +44,12 @@ class RolePermissionSeeder extends Seeder
         'التقارير' => [
             ['key' => 'reports.view', 'display_name' => 'عرض التقارير'],
         ],
+        'حجوزات' => [
+            ['key' => 'reservations.view',   'display_name' => 'عرض الحجوزات'],
+            ['key' => 'reservations.create', 'display_name' => 'إنشاء حجز'],
+            ['key' => 'reservations.update', 'display_name' => 'تعديل حجز'],
+            ['key' => 'reservations.cancel', 'display_name' => 'إلغاء حجز'],
+        ],
         'الإدارة' => [
             ['key' => 'admin.branches',       'display_name' => 'إدارة الفروع'],
             ['key' => 'admin.areas',          'display_name' => 'إدارة القاعات'],
@@ -78,6 +84,7 @@ class RolePermissionSeeder extends Seeder
                 'payments.process', 'payments.view', 'invoices.refund',
                 'customers.view', 'customers.create',
                 'menu.view',
+                'reservations.view', 'reservations.create', 'reservations.update',
             ],
         ],
         [

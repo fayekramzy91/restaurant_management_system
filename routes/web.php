@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Controllers\Admin\AreaController;
+use App\Http\Controllers\Admin\ReservationController;
 use App\Http\Controllers\Customer\CustomerMenuController;
 use App\Http\Controllers\Customer\CustomerOrderController;
 use App\Http\Controllers\Admin\BranchController;
@@ -89,7 +90,8 @@ Route::middleware('auth')->prefix('admin')->name('admin.')->group(function () {
         Route::get('reports',         [ReportController::class, 'dashboard'])->name('reports.dashboard');
         Route::get('reports/taxes',   [ReportController::class, 'taxes'])   ->name('reports.taxes');
         Route::get('reports/shifts',  [ReportController::class, 'shifts'])  ->name('reports.shifts');
-        Route::get('reports/wallet',  [ReportController::class, 'wallet'])  ->name('reports.wallet');
+        Route::get('reports/wallet',        [ReportController::class, 'wallet'])       ->name('reports.wallet');
+        Route::get('reports/reservations',  [ReportController::class, 'reservations']) ->name('reports.reservations');
     });
 
     Route::middleware('permission:reports.view')->group(function () {
@@ -145,6 +147,36 @@ Route::middleware('auth')->prefix('admin')->name('admin.')->group(function () {
     Route::middleware('permission:admin.roles')->group(function () {
         Route::resource('roles', RoleController::class)->only(['index', 'store', 'update', 'destroy']);
         Route::post('roles/{role}/permissions', [RoleController::class, 'syncPermissions'])->name('roles.permissions');
+    });
+
+    Route::prefix('reservations')->name('reservations.')->group(function () {
+        Route::get('/upcoming', [ReservationController::class, 'upcoming'])
+            ->name('upcoming')
+            ->middleware('permission:reservations.view');
+
+        Route::get('/', [ReservationController::class, 'index'])
+            ->name('index')
+            ->middleware('permission:reservations.view');
+
+        Route::post('/', [ReservationController::class, 'store'])
+            ->name('store')
+            ->middleware('permission:reservations.create');
+
+        Route::put('/{reservation}', [ReservationController::class, 'update'])
+            ->name('update')
+            ->middleware('permission:reservations.update');
+
+        Route::post('/{reservation}/status', [ReservationController::class, 'updateStatus'])
+            ->name('update-status')
+            ->middleware('permission:reservations.update');
+
+        Route::post('/{reservation}/reschedule', [ReservationController::class, 'reschedule'])
+            ->name('reschedule')
+            ->middleware('permission:reservations.update');
+
+        Route::post('/{reservation}/reminded', [ReservationController::class, 'markReminded'])
+            ->name('mark-reminded')
+            ->middleware('permission:reservations.view');
     });
 });
 

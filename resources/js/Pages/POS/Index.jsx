@@ -4,6 +4,7 @@ import {
     ShoppingBag, Clock, User, RefreshCw, MapPin, Users,
     Plus, LayoutDashboard, ChevronDown, Truck, ShoppingCart,
     Package, Edit3, CreditCard, X, LogOut, Search, SlidersHorizontal,
+    CalendarDays,
 } from 'lucide-react';
 import Modal from '@/Components/Modal';
 
@@ -25,7 +26,7 @@ function statusColors(status) {
     return 'text-gray-500 bg-gray-50 border-gray-200';
 }
 
-export default function Index({ areas, orders }) {
+export default function Index({ areas, orders, today_reservations }) {
     const { settings, auth } = usePage().props;
     const currency = settings?.currency || 'SAR';
     const permissions = auth.user?.permissions ?? [];
@@ -55,6 +56,9 @@ export default function Index({ areas, orders }) {
     /* ── Ready-order notifications ───────────────── */
     const [readyNotices, setReadyNotices] = useState([]);
     const prevOrdersRef = useRef(orders);
+
+    /* ── Reservation reminders ───────────────────── */
+    const [upcomingReservations, setUpcomingReservations] = useState([]);
 
     // Request browser notification permission once
     useEffect(() => {
@@ -112,7 +116,7 @@ export default function Index({ areas, orders }) {
     // Poll every 30 seconds to refresh orders and table statuses
     useEffect(() => {
         const id = setInterval(() => {
-            router.reload({ only: ['orders', 'areas'] });
+            router.reload({ only: ['orders', 'areas', 'today_reservations'] });
         }, 30000);
         return () => clearInterval(id);
     }, []);
@@ -124,6 +128,59 @@ export default function Index({ areas, orders }) {
             .then(data => { setShiftSession(data.session); setShiftLoading(false); })
             .catch(() => setShiftLoading(false));
     }, []);
+
+    // Poll upcoming reservations every 60 seconds
+    useEffect(() => {
+        const checkUpcoming = async () => {
+            try {
+                const res = await fetch('/admin/reservations/upcoming', {
+                    headers: { 'Accept': 'application/json' },
+                    credentials: 'same-origin',
+                });
+                if (res.ok) {
+                    const data = await res.json();
+                    setUpcomingReservations(data.reservations ?? []);
+                }
+            } catch (_) {
+                // Silently ignore — non-critical
+            }
+        };
+        checkUpcoming();
+        const interval = setInterval(checkUpcoming, 60_000);
+        return () => clearInterval(interval);
+    }, []);
+
+    /* ── Reservation helpers ─────────────────────── */
+    const getTableReservations = (tableId) =>
+        today_reservations?.[tableId] ?? [];
+
+    const getActiveReservation = (tableId) =>
+        getTableReservations(tableId).find(r =>
+            r.status === 'confirmed' || r.status === 'seated'
+        );
+
+    const getWaitlistCount = (tableId) =>
+        getTableReservations(tableId).filter(r => r.status === 'waitlist').length;
+
+    const handleSeatReservation = async (reservationId, tableId) => {
+        if (!confirm('تحويل الحجز لجلسة نشطة؟')) return;
+        try {
+            const res = await fetch(`/admin/reservations/${reservationId}/status`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Accept':       'application/json',
+                    'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]')?.content ?? '',
+                },
+                body: JSON.stringify({ status: 'seated' }),
+            });
+            if (res.ok || res.status === 302) {
+                router.reload({ only: ['areas', 'today_reservations'] });
+            }
+        } catch (e) {
+            console.error('Seat reservation error:', e);
+        }
+    };
 
     const tableCounts = useMemo(() => {
         const all = areas.flatMap(a => a.tables);
@@ -301,6 +358,37 @@ export default function Index({ areas, orders }) {
                 </div>
             )}
 
+            {/* ── Upcoming Reservations Reminder Banner ── */}
+            {upcomingReservations.length > 0 && (
+                <div className="mx-4 mb-2 mt-1 bg-blue-900/40 border border-blue-700/50
+                                rounded-xl px-4 py-2.5 text-blue-300 text-sm">
+                    <div className="flex items-center justify-between mb-1">
+                        <span className="flex items-center gap-2 font-bold">
+                            <span className="w-2 h-2 rounded-full bg-blue-400 animate-pulse shrink-0" />
+                            🔔 {upcomingReservations.length} حجز خلال وقت قريب
+                        </span>
+                        <button
+                            onClick={() => setActiveTab('reservations')}
+                            className="text-xs text-blue-400 underline hover:text-blue-200 transition-colors"
+                        >
+                            عرض الكل
+                        </button>
+                    </div>
+                    <div className="space-y-0.5">
+                        {upcomingReservations.slice(0, 3).map(r => (
+                            <div key={r.id}
+                                 className="text-xs text-blue-400/80 flex justify-between">
+                                <span>{r.table} — {r.customer_name}</span>
+                                <span>
+                                    {r.reservation_time?.slice(0, 5)}
+                                    &nbsp;({r.minutes_until} د)
+                                </span>
+                            </div>
+                        ))}
+                    </div>
+                </div>
+            )}
+
             {/* Tab Navigation */}
             <div className="bg-white border-b px-4 sm:px-6 sticky top-[57px] sm:top-[73px] z-40">
                 <div className="flex">
@@ -316,6 +404,13 @@ export default function Index({ areas, orders }) {
                         icon={<ShoppingCart size={15} />}
                         label="قائمة الطلبات"
                         badge={orders.length > 0 ? orders.length : null}
+                    />
+                    <TabBtn
+                        active={activeTab === 'reservations'}
+                        onClick={() => setActiveTab('reservations')}
+                        icon={<CalendarDays size={15} />}
+                        label="الحجوزات"
+                        badge={upcomingReservations.length > 0 ? upcomingReservations.length : null}
                     />
                 </div>
             </div>
@@ -368,37 +463,44 @@ export default function Index({ areas, orders }) {
 
                                     <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 xl:grid-cols-8 gap-4">
                                         {visibleTables.map((table) => {
-                                            const activeOrder = table.orders?.[0] ?? null;
-                                            const isBilling = table.status === 'billing';
-                                            const tableHref = route('pos.table', table.id);
+                                            const activeOrder  = table.orders?.[0] ?? null;
+                                            const isBilling    = table.status === 'billing';
+                                            const tableHref    = route('pos.table', table.id);
+                                            const activeRes    = getActiveReservation(table.id);
+                                            const waitCount    = getWaitlistCount(table.id);
+
+                                            // Override visual status for available tables with a confirmed reservation
+                                            const displayStatus = (
+                                                activeRes?.status === 'confirmed' && table.status === 'available'
+                                            ) ? 'reserved' : table.status;
 
                                             const cardClass = {
                                                 available: 'bg-white border-green-100 hover:border-green-400 hover:shadow-md',
                                                 occupied:  'bg-red-50 border-red-200 hover:shadow-md',
                                                 reserved:  'bg-yellow-50 border-yellow-200 hover:shadow-md',
                                                 billing:   'bg-amber-50 border-amber-300 hover:shadow-md',
-                                            }[table.status] ?? 'bg-white border-gray-100';
+                                            }[displayStatus] ?? 'bg-white border-gray-100';
 
                                             const dotClass = {
                                                 available: 'bg-green-500',
                                                 occupied:  'bg-red-500 animate-pulse',
                                                 reserved:  'bg-yellow-400',
                                                 billing:   'bg-amber-500 animate-pulse',
-                                            }[table.status] ?? 'bg-gray-400';
+                                            }[displayStatus] ?? 'bg-gray-400';
 
                                             const statusLabel = {
                                                 available: 'متاحة',
                                                 occupied:  'مشغولة',
                                                 reserved:  'محجوزة',
                                                 billing:   'بانتظار الدفع',
-                                            }[table.status] ?? table.status;
+                                            }[displayStatus] ?? displayStatus;
 
                                             const statusTextClass = {
                                                 available: 'text-green-600',
                                                 occupied:  'text-red-600',
                                                 reserved:  'text-yellow-600',
                                                 billing:   'text-amber-600',
-                                            }[table.status] ?? 'text-gray-400';
+                                            }[displayStatus] ?? 'text-gray-400';
 
                                             return (
                                                 <Link
@@ -408,8 +510,8 @@ export default function Index({ areas, orders }) {
                                                 >
                                                     {/* Icon */}
                                                     <div className={`p-2.5 rounded-full ${
-                                                        table.status === 'available' ? 'bg-green-50 text-green-600' :
-                                                        table.status === 'billing'   ? 'bg-amber-50 text-amber-600' : 'bg-white/60'
+                                                        displayStatus === 'available' ? 'bg-green-50 text-green-600' :
+                                                        displayStatus === 'billing'   ? 'bg-amber-50 text-amber-600' : 'bg-white/60'
                                                     }`}>
                                                         {isBilling ? <CreditCard size={20} /> : <Users size={20} />}
                                                     </div>
@@ -445,6 +547,51 @@ export default function Index({ areas, orders }) {
                                                         <span className={`text-[10px] font-black font-sans mt-0.5 ${isBilling ? 'text-amber-600' : 'text-[#ee1d23]'}`}>
                                                             #{activeOrder.id} · {activeOrder.total_amount} {currency}
                                                         </span>
+                                                    )}
+
+                                                    {/* ── Reservation info strip ── */}
+                                                    {activeRes && (
+                                                        <div className="w-full mt-2 pt-2 border-t border-gray-200 text-xs">
+                                                            <div className="flex items-center justify-between text-gray-500 mb-1">
+                                                                <span>🕐 {activeRes.reservation_time.slice(0, 5)}</span>
+                                                                <span className="font-bold text-gray-700 truncate mx-1 max-w-[70px]">
+                                                                    {activeRes.customer_name}
+                                                                </span>
+                                                                <span>👥 {activeRes.party_size}</span>
+                                                            </div>
+
+                                                            {activeRes.status === 'confirmed' && (
+                                                                <button
+                                                                    onClick={e => {
+                                                                        e.preventDefault();
+                                                                        e.stopPropagation();
+                                                                        handleSeatReservation(activeRes.id, table.id);
+                                                                    }}
+                                                                    className="w-full text-center text-xs font-bold
+                                                                               bg-green-100 hover:bg-green-200
+                                                                               text-green-700 rounded-lg py-1
+                                                                               transition-colors"
+                                                                >
+                                                                    تحويل للجلوس ←
+                                                                </button>
+                                                            )}
+
+                                                            {activeRes.status === 'seated' && (
+                                                                <div className="w-full text-center text-xs text-green-600 font-bold">
+                                                                    ✓ جالس
+                                                                </div>
+                                                            )}
+                                                        </div>
+                                                    )}
+
+                                                    {/* Waitlist badge */}
+                                                    {waitCount > 0 && (
+                                                        <div className="mt-1 text-center">
+                                                            <span className="text-xs bg-yellow-100 text-yellow-700
+                                                                             rounded-full px-2 py-0.5 font-bold">
+                                                                انتظار: {waitCount}
+                                                            </span>
+                                                        </div>
                                                     )}
 
                                                     {/* Status dot */}
@@ -645,6 +792,76 @@ export default function Index({ areas, orders }) {
                             </div>
                         )}
                     </div>
+                    </div>
+                )}
+
+                {/* ───── Reservations Tab ───── */}
+                {activeTab === 'reservations' && (
+                    <div className="max-w-2xl mx-auto">
+                        <h3 className="text-gray-800 font-black text-base mb-4 flex items-center gap-2">
+                            <CalendarDays size={18} className="text-[#ee1d23]" />
+                            حجوزات اليوم
+                        </h3>
+
+                        {Object.values(today_reservations ?? {})
+                            .flat()
+                            .sort((a, b) => a.reservation_time.localeCompare(b.reservation_time))
+                            .map(r => (
+                                <div key={r.id}
+                                     className="bg-white border border-gray-100 rounded-2xl p-4 mb-3 shadow-sm">
+                                    <div className="flex items-center justify-between mb-2">
+                                        <span className="text-gray-800 font-black text-sm">
+                                            {r.customer_name}
+                                        </span>
+                                        <span className={`text-xs px-2.5 py-0.5 rounded-full font-bold ${
+                                            r.status === 'confirmed'
+                                                ? 'bg-blue-100 text-blue-700'
+                                            : r.status === 'seated'
+                                                ? 'bg-green-100 text-green-700'
+                                            : 'bg-yellow-100 text-yellow-700'
+                                        }`}>
+                                            {r.status === 'confirmed' ? 'مؤكد'
+                                           : r.status === 'seated'    ? 'جالس'
+                                           : 'انتظار'}
+                                        </span>
+                                    </div>
+
+                                    <div className="flex items-center gap-3 text-xs text-gray-500 flex-wrap">
+                                        <span>🕐 {r.reservation_time.slice(0, 5)}</span>
+                                        <span>👥 {r.party_size} أشخاص</span>
+                                        {r.customer_phone && (
+                                            <span>📞 {r.customer_phone}</span>
+                                        )}
+                                    </div>
+
+                                    {r.notes && (
+                                        <p className="text-xs text-gray-400 mt-2 italic border-t border-gray-50 pt-2">
+                                            {r.notes}
+                                        </p>
+                                    )}
+
+                                    {r.status === 'confirmed' && (
+                                        <button
+                                            onClick={() => handleSeatReservation(r.id, r.table_id)}
+                                            className="mt-3 w-full py-2 rounded-xl text-xs font-black
+                                                       bg-green-50 hover:bg-green-100
+                                                       text-green-700 border border-green-200
+                                                       transition-colors"
+                                        >
+                                            تحويل للجلوس ←
+                                        </button>
+                                    )}
+                                </div>
+                            ))
+                        }
+
+                        {Object.keys(today_reservations ?? {}).length === 0 && (
+                            <EmptyState
+                                icon={<CalendarDays size={56} className="opacity-20" />}
+                                title="لا توجد حجوزات اليوم"
+                                subtitle="تظهر هنا حجوزات اليوم المؤكدة وقائمة الانتظار"
+                            />
+                        )}
                     </div>
                 )}
             </main>

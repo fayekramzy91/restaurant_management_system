@@ -37,4 +37,9 @@ class Customer extends Model
     {
         return $this->hasMany(WalletTransaction::class);
     }
+
+    public function reservations()
+    {
+        return $this->hasMany(Reservation::class);
+    }
 }

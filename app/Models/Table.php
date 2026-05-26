@@ -21,4 +21,17 @@ class Table extends Model
     {
         return $this->hasMany(Order::class);
     }
+
+    public function reservations()
+    {
+        return $this->hasMany(Reservation::class);
+    }
+
+    public function activeReservation()
+    {
+        return $this->hasOne(Reservation::class)
+                    ->whereIn('status', ['confirmed', 'seated'])
+                    ->whereDate('reservation_date', today())
+                    ->latest();
+    }
 }

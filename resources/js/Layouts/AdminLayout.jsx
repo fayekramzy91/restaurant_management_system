@@ -3,7 +3,7 @@ import { useState } from 'react';
 import {
     LayoutDashboard, Store, Tag, Utensils, Map, LayoutGrid,
     ShoppingCart, Settings, LogOut, ChevronLeft, ChevronDown, Users, UserCog, ShieldCheck,
-    BarChart2, ReceiptText, Percent, FileText, Clock, Wallet,
+    BarChart2, ReceiptText, Percent, FileText, Clock, Wallet, CalendarDays,
 } from 'lucide-react';
 import { Avatar, AvatarFallback } from '@/Components/ui/avatar';
 import { Separator } from '@/Components/ui/separator';
@@ -25,13 +25,15 @@ const NAV_ITEMS = [
         children: [
             { name: 'لوحة التقارير',  icon: BarChart2, route: 'admin.reports.dashboard', active: 'admin.reports.dashboard' },
             { name: 'تقرير الضرائب',  icon: FileText,  route: 'admin.reports.taxes',     active: 'admin.reports.taxes'    },
-            { name: 'تقرير الورديات', icon: Clock,     route: 'admin.reports.shifts',    active: 'admin.reports.shifts'   },
-            { name: 'تقرير المحافظ',  icon: Wallet,    route: 'admin.reports.wallet',    active: 'admin.reports.wallet'   },
+            { name: 'تقرير الورديات', icon: Clock,        route: 'admin.reports.shifts',        active: 'admin.reports.shifts'        },
+            { name: 'تقرير المحافظ',  icon: Wallet,      route: 'admin.reports.wallet',        active: 'admin.reports.wallet'        },
+            { name: 'تقرير الحجوزات', icon: CalendarDays, route: 'admin.reports.reservations', active: 'admin.reports.reservations'  },
         ],
     },
-    { name: 'الطلبات',            icon: ShoppingCart, route: 'admin.orders.index',        active: 'admin.orders.*',       permission: 'reports.view' },
-    { name: 'الفواتير',           icon: ReceiptText,  route: 'admin.invoices.index',      active: 'admin.invoices.*',     permission: 'payments.view' },
-    { name: 'العملاء',            icon: Users,        route: 'admin.customers.index',     active: 'admin.customers.*',    permission: 'customers.view' },
+    { name: 'الطلبات',            icon: ShoppingCart,  route: 'admin.orders.index',        active: 'admin.orders.*',        permission: 'reports.view' },
+    { name: 'الحجوزات',           icon: CalendarDays,  route: 'admin.reservations.index',  active: 'admin.reservations.*',  permission: 'reservations.view' },
+    { name: 'الفواتير',           icon: ReceiptText,   route: 'admin.invoices.index',      active: 'admin.invoices.*',      permission: 'payments.view' },
+    { name: 'العملاء',            icon: Users,         route: 'admin.customers.index',     active: 'admin.customers.*',     permission: 'customers.view' },
     { name: 'الأفرع',             icon: Store,        route: 'admin.branches.index',      active: 'admin.branches.*',     permission: 'admin.branches' },
     { name: 'التصنيفات',          icon: Tag,          route: 'admin.categories.index',    active: 'admin.categories.*',   permission: 'admin.categories' },
     { name: 'قائمة الطعام',       icon: Utensils,     route: 'admin.menu-items.index',    active: 'admin.menu-items.*',   permission: 'admin.categories' },
